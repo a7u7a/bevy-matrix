@@ -13,10 +13,16 @@ https://sotrh.github.io/learn-wgpu/#what-is-wgpu
 (in progress, documenting)
 (installed rust, cargo and rust analyzer)
 
-`cargo new my_bevy_game`
-`cd my_bevy_game`
+```bash
+cargo new my_bevy_game
+cd my_bevy_game
+```
 
-Install bevy `cargo add bevy`
+Install bevy
+
+```bash
+cargo add bevy
+```
 
 Add this to `main.rs`:
 
@@ -28,7 +34,11 @@ fn main() {
 }
 ```
 
-Run: `cargo run`
+Run:
+
+```bash
+cargo run
+```
 
 ## Piping data to LED matrix
 

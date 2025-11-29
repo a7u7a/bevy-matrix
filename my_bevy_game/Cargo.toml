@@ -1,7 +1,15 @@
 [package]
 name = "my_bevy_game"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-bevy = "0.17.3"
+bevy = { version = "0.17.3", default-features = false, features = ["bevy_render", "png"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rpi-led-matrix = { version = "0.2", optional = true }
+
+[features]
+default = ["window"]
+window = ["bevy/bevy_winit", "bevy/bevy_core_pipeline", "bevy/x11"]
+matrix = ["rpi-led-matrix"]

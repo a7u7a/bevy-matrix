@@ -1,11 +1,63 @@
 use bevy::prelude::*;
 
+mod display;
+use display::{Backend, DisplayBackend, DisplayResource};
+
 fn main() {
-    App::new()
-        .add_systems(Startup, add_people)
-        // Chain the systems to run in exactly the order they're listed in the code
-        .add_systems(Update, (hello_world, (update_people, greet_people).chain()))
+    let backend = Backend::new().expect("Failed to initialize display");
+    let display_resource = DisplayResource(Box::new(backend));
+    
+    let mut app = App::new();
+    
+    #[cfg(feature = "window")]
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "Bevy Game".into(),
+            resolution: (64, 64).into(),
+            ..default()
+        }),
+        ..default()
+    }));
+    
+    #[cfg(not(feature = "window"))]
+    app.add_plugins(MinimalPlugins);
+    
+    app.insert_resource(display_resource)
+        .add_systems(Startup, setup)
+        .add_systems(Update, (render_frame, hello_world, (update_people, greet_people).chain()))
         .run();
+}
+
+fn setup(mut commands: Commands) {
+    #[cfg(feature = "window")]
+    commands.spawn(Camera2d);
+    
+    // Keep the original people spawning
+    add_people(commands);
+}
+
+fn render_frame(
+    mut backend: ResMut<DisplayResource>,
+) {
+    // Extract frame pixels and write to backend
+    // For now, create a simple test pattern - alternating red and blue pixels
+    let mut pixels = vec![0u8; 64 * 64 * 3];
+    for y in 0..64 {
+        for x in 0..64 {
+            let idx = ((y * 64 + x) * 3) as usize;
+            // Create a simple test pattern
+            if (x + y) % 2 == 0 {
+                pixels[idx] = 255;     // Red
+                pixels[idx + 1] = 0;   // Green
+                pixels[idx + 2] = 0;   // Blue
+            } else {
+                pixels[idx] = 0;       // Red
+                pixels[idx + 1] = 0;   // Green
+                pixels[idx + 2] = 255; // Blue
+            }
+        }
+    }
+    backend.0.write_frame(&pixels).ok();
 }
 
 // Keeping for reference

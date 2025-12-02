@@ -1,3 +1,5 @@
+// Pi LED matrix backend
+
 use super::DisplayBackend;
 use rpi_led_matrix::{LedCanvas, LedColor, LedMatrix};
 use std::mem;

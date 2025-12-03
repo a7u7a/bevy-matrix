@@ -1,7 +1,5 @@
 // DisplayBackend trait + Resource wrapper
 
-
-
 use bevy::prelude::Resource;
 
 #[derive(Resource)]

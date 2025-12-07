@@ -14,7 +14,7 @@ This creates a 64x64 window with a test pattern (alternating red/blue checkerboa
 
 ## Deploying to Raspberry Pi
 
-### Cross compile
+### Cross compiling setup
 
 **On the Mac:**
 
@@ -53,7 +53,11 @@ mkdir -p ~/cross-libs/aarch64-linux-gnu
 cp lib/librgbmatrix.a ~/cross-libs/aarch64-linux-gnu/
 ```
 
-3. Now lets build the game for Raspberry Pi from Mac:
+Now we have a basic cross compiling setup for the game.
+
+### Cross compile the game for Pi
+
+Build the game for Raspberry Pi from Mac:
 
 ```bash
 cargo build --release --target aarch64-unknown-linux-gnu --features matrix --no-default-features
@@ -71,7 +75,16 @@ scp target/aarch64-unknown-linux-gnu/release/my_bevy_game ayu@pi.local:~/
 sudo ./my_bevy_game
 ```
 
-#### Troubleshooting "Pi sound module is loaded" error
+## Performance Tips for Pi
+
+1. **Reduce color depth**: Use `--led-pwm-bits=7` (configure in matrix backend)
+2. **Reserve CPU core**: Add `isolcpus=3` to `/boot/cmdline.txt`
+3. **Target 30 FPS**: Realistic for Pi Zero 2 W with 64x64 display
+4. **Disable swap**: Reduces latency
+
+## Troubleshooting
+
+### Error: "Pi sound module is loaded"
 
 ```bash
 # Edit the config file
@@ -86,19 +99,6 @@ echo "blacklist snd_bcm2835" | sudo tee /etc/modprobe.d/blacklist-rgb-matrix.con
 # Reboot
 sudo reboot
 ```
-
-## Performance Tips for Pi
-
-1. **Reduce color depth**: Use `--led-pwm-bits=7` (configure in matrix backend)
-2. **Reserve CPU core**: Add `isolcpus=3` to `/boot/cmdline.txt`
-3. **Target 30 FPS**: Realistic for Pi Zero 2 W with 64x64 display
-4. **Disable swap**: Reduces latency
-
-## Troubleshooting
-
-### "Operation not permitted" on Pi
-
-- Must run with `sudo` for GPIO access
 
 ### Matrix shows garbage
 

@@ -1,19 +1,29 @@
-use bevy::prelude::*;
+// Explicit imports - only what we need for this demo
+use bevy::app::{App, Plugin, Startup, Update};
+use bevy::ecs::component::Component;
+use bevy::ecs::query::With;
+use bevy::ecs::system::{Commands, Query, Res, ResMut};
+use bevy::prelude::Resource;
+use bevy::time::{Time, Timer, TimerMode};
 
-// pub makes it visible outside the module
-pub struct HelloPlugin;
+/// A minimal plugin demonstrating basic Bevy ECS features
+/// This should work on both windowed (Mac) and headless (Pi) platforms
+pub struct BasicDemoPlugin;
 
-impl Plugin for HelloPlugin {
+impl Plugin for BasicDemoPlugin {
     fn build(&self, app: &mut App) {
-        // add things to your app here
+        // Insert our timer resource
         app.insert_resource(GreetTimer(Timer::from_seconds(2.0, TimerMode::Repeating)));
+
+        // Add startup system to create entities
         app.add_systems(Startup, add_people);
-        // Chain the systems to run in exactly the order they're listed in the code
-        app.add_systems(Update, (update_people, greet_people).chain());
+
+        // Add update systems that run every frame
+        app.add_systems(Update, (update_people, greet_people));
     }
 }
 
-// Components (keep these private to the module or make pub if needed elsewhere)
+// Components
 #[derive(Component)]
 struct Person;
 
@@ -24,27 +34,26 @@ struct Name(String);
 #[derive(Resource)]
 struct GreetTimer(Timer);
 
-// Systems
+// Startup system - runs once at app start
 fn add_people(mut commands: Commands) {
     commands.spawn((Person, Name("Elaina Proctor".to_string())));
     commands.spawn((Person, Name("Renzo Hume".to_string())));
     commands.spawn((Person, Name("Zayna Nieves".to_string())));
 }
 
-// Your First mutable Query
+// Update system - runs every frame
 fn update_people(mut query: Query<&mut Name, With<Person>>) {
     for mut name in &mut query {
         if name.0 == "Elaina Proctor" {
             name.0 = "Elaina Hume".to_string();
-            break; // We don't need to change any other names.
+            break;
         }
     }
 }
 
-// Iterate over every Name component for entities that also have a Person component
+// Update system - runs every frame, prints on timer
 fn greet_people(time: Res<Time>, mut timer: ResMut<GreetTimer>, query: Query<&Name, With<Person>>) {
-    // update our timer with the time elapsed since the last update
-    // if that caused the timer to finish, we say hello to everyone
+    // Tick the timer with the time elapsed since last frame
     if timer.0.tick(time.delta()).just_finished() {
         for name in &query {
             println!("hello {}!", name.0);

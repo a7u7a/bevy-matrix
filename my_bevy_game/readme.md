@@ -38,6 +38,24 @@ Opens a window and prints hello messages every 2 seconds.
 cargo run --no-default-features --features matrix
 ```
 
+**Development profiles:**
+
+```bash
+# Standard dev build (optimized for iteration speed)
+# - Your code: opt-level 1 (fast compile, decent runtime)
+# - Dependencies: opt-level 3 (slow first compile, fast runtime)
+cargo run
+
+# Ultra-fast compilation for quick syntax checks
+# - Everything: opt-level 0 (fastest compile, slowest runtime)
+cargo build --profile dev-fast
+
+# Release build (maximum optimization)
+cargo build --release
+```
+
+The dev profile balances compile time and runtime performance. First compile is slow (dependencies), but subsequent builds are fast since dependencies are cached.
+
 ## Deploying to Raspberry Pi
 
 ### Cross compiling setup
@@ -152,6 +170,19 @@ src/
 - Easy to test headless mode on Mac
 - Clear separation of concerns
 - Explicit imports (no `use bevy::prelude::*`)
+- Optimized dev profile for faster iteration
+  - First compile: ~20s (dependencies optimized once)
+  - Incremental: ~2-3s (only your code recompiles)
+
+**Why explicit imports?**
+
+Example: To use `.chain()` for system ordering, we need:
+```rust
+use bevy::ecs::schedule::IntoScheduleConfigs;
+app.add_systems(Startup, (add_people, update_people).chain());
+```
+
+In Rust, trait methods require the trait to be in scope. Explicit imports make it clear where each type comes from, which is helpful for learning Bevy's structure.
 
 ## Performance Tips for Pi
 

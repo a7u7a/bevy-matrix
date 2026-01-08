@@ -17,7 +17,9 @@ use std::time::Duration;
 mod basic_demo;
 use basic_demo::BasicDemoPlugin;
 
-// Target 60 FPS on both platforms for consistency
+// Target frame rate for headless mode
+// Note: Window mode uses vsync (~60 FPS typically), headless uses fixed timestep
+// These won't be perfectly synchronized, but should be close enough for game logic
 #[cfg(not(feature = "window"))]
 const TARGET_FPS: u64 = 60;
 #[cfg(not(feature = "window"))]
@@ -37,9 +39,10 @@ fn main() {
 
     #[cfg(not(feature = "window"))]
     {
-        println!("Running in headless mode");
+        println!("Running in headless mode (fixed timestep: {}ms)", FRAME_TIME_MS);
         // Pi: Minimal plugins for headless operation
-        // Manually run at 60 FPS to match window mode behavior
+        // Window mode uses vsync-driven event loop (WinitPlugin)
+        // Headless mode uses fixed timestep loop (ScheduleRunnerPlugin)
         app.add_plugins((
             ScheduleRunnerPlugin {
                 run_mode: bevy::app::RunMode::Loop {

@@ -13,7 +13,7 @@ This is a minimal Bevy app demonstrating platform-specific plugin configuration:
 ## Roadmap
 
 - [x] Implement base bevy project with cross-compiling. Runs in mac and in the pi
-- [ ] (In progress) Add `rpi-rgb-led-matrix` library rust bindings, minimal working demo writing something to the screen using bevy in rust. Must run and compile in both targets
+- [ ] (In progress) Add `rpi-rgb-led-matrix` library rust bindings, minimal working demo writing something to the screen using bevy in rust. Must run and compile in both targets but no output is expected in window mode.
 - [ ] Add Bevy rendering in headless rpi, minimal working demo. Can we render in a context that has no window? can we access the camera or some way of rendering target?
 - [ ] Integrate bevy and matrix: Once access to the rendered bevy camera output buffer is confirmed we will try to write the frame to the matrix screen using the rpi-rgb-led-matrix rust bindings
 
@@ -140,6 +140,7 @@ The code uses conditional compilation to select appropriate plugins:
 app.add_plugins(DefaultPlugins);  // Mac: full windowing & rendering
 
 #[cfg(not(feature = "window"))]
+// Minimal plugins doesn't include a default scheduler so we need to add it here
 app.add_plugins((
     ScheduleRunnerPlugin { ... },  // Pi: headless loop
     TimePlugin,                     // Pi: time tracking
@@ -148,7 +149,12 @@ app.add_plugins((
 
 **Key insights:**
 - `MinimalPlugins` doesn't include a schedule runner. Headless apps need `ScheduleRunnerPlugin` to continuously run the Update schedule.
-- Both platforms target **60 FPS** for consistency (window mode via vsync, headless via fixed timestep).
+- **Frame rate consistency:** Both platforms target ~60 FPS, but differently:
+  - **Window mode:** Event-driven loop (WinitPlugin) synchronized to vsync
+  - **Headless mode:** Fixed timestep loop (16.67ms delay)
+    - They're not perfectly synchronized but close enough for game logic
+    - Without window (headless mode) we MUST use ScheduleRunnerPlugin to have any loop at all
+
 
 ## Code Structure
 

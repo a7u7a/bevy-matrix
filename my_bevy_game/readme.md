@@ -20,7 +20,7 @@ This is a minimal Bevy app demonstrating platform-specific plugin configuration:
 ## Pending
 
 - Implement tooling to help speed up cross-compile development and testing
-- Document driver installation process
+- Document rpi gpu driver installation
 
 ## Running on Mac
 

@@ -21,6 +21,7 @@ This is a minimal Bevy app demonstrating platform-specific plugin configuration:
 
 - Implement tooling to help speed up cross-compile development and testing
 - Document rpi gpu driver installation
+- Test dev profiles on the pi
 
 ## Running on Mac
 
@@ -48,7 +49,7 @@ cargo run
 
 # Ultra-fast compilation for quick syntax checks
 # - Everything: opt-level 0 (fastest compile, slowest runtime)
-cargo build --profile dev-fast
+cargo build --profile dev-fast --features window
 
 # Release build (maximum optimization)
 cargo build --release
@@ -145,7 +146,9 @@ app.add_plugins((
 ));
 ```
 
-**Key insight**: `MinimalPlugins` doesn't include a schedule runner. Headless apps need `ScheduleRunnerPlugin` to continuously run the Update schedule.
+**Key insights:**
+- `MinimalPlugins` doesn't include a schedule runner. Headless apps need `ScheduleRunnerPlugin` to continuously run the Update schedule.
+- Both platforms target **60 FPS** for consistency (window mode via vsync, headless via fixed timestep).
 
 ## Code Structure
 

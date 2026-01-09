@@ -17,6 +17,12 @@ use std::time::Duration;
 mod basic_demo;
 use basic_demo::BasicDemoPlugin;
 
+// Render demo only used in window mode
+#[cfg(feature = "window")]
+mod render_demo;
+#[cfg(feature = "window")]
+use render_demo::RenderDemoPlugin;
+
 // Matrix demo only used in headless mode
 #[cfg(not(feature = "window"))]
 mod matrix_demo;
@@ -60,6 +66,9 @@ fn main() {
     }
 
     app.add_plugins(BasicDemoPlugin);
+
+    #[cfg(feature = "window")]
+    app.add_plugins(RenderDemoPlugin);
 
     #[cfg(not(feature = "window"))]
     app.add_plugins(MatrixDemoPlugin);

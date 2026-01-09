@@ -4,15 +4,36 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy = { version = "0.17.3", default-features = false, features = ["bevy_render", "png"] }
+# Disable bevy default features - we'll enable only what we need per feature
+bevy = { version = "0.17.3", default-features = false, features = [
+    "bevy_core_pipeline",  # Core rendering pipeline (needed for both modes during development)
+    "bevy_asset",          # Asset management
+    "zstd_rust",           # Image compression backend (pure Rust implementation)
+] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rpi-led-matrix = { version = "0.2", optional = true }
 
 [features]
 default = ["window"]
-window = ["bevy/bevy_winit", "bevy/bevy_core_pipeline", "bevy/x11"]
-matrix = ["rpi-led-matrix"] # Raspberry Pi on headless mode
+# Window mode - enable full rendering, windowing, and default plugins
+window = [
+    "bevy/bevy_winit",           # Window management
+    "bevy/bevy_render",          # Rendering backend
+    "bevy/bevy_pbr",             # PBR rendering (for 3D)
+    "bevy/bevy_gltf",            # GLTF asset loading
+    "bevy/bevy_scene",           # Scene management
+    "bevy/default_font",         # Default font for UI
+    "bevy/png",                  # PNG texture support
+    "bevy/tonemapping_luts",     # Tonemapping
+    "bevy/x11",                  # X11 support (Linux desktop)
+    "bevy/webgpu",               # WebGPU support (needed for GPU rendering)
+]
+# Matrix mode - minimal headless features
+matrix = [
+    "rpi-led-matrix",
+    "bevy/multi_threaded",       # Multi-threading support
+]
 
 # Optimize dev builds for faster iteration (Bevy best practice)
 [profile.dev]

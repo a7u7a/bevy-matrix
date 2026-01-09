@@ -12,7 +12,7 @@ rpi-led-matrix = { version = "0.2", optional = true }
 [features]
 default = ["window"]
 window = ["bevy/bevy_winit", "bevy/bevy_core_pipeline", "bevy/x11"]
-matrix = ["rpi-led-matrix"]
+matrix = ["rpi-led-matrix"] # Raspberry Pi on headless mode
 
 # Optimize dev builds for faster iteration (Bevy best practice)
 [profile.dev]

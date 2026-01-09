@@ -13,9 +13,15 @@ use bevy::time::TimePlugin;
 #[cfg(not(feature = "window"))]
 use std::time::Duration;
 
-// Declare the module
+// Declare the modules
 mod basic_demo;
 use basic_demo::BasicDemoPlugin;
+
+// Matrix demo only used in headless mode
+#[cfg(not(feature = "window"))]
+mod matrix_demo;
+#[cfg(not(feature = "window"))]
+use matrix_demo::MatrixDemoPlugin;
 
 // Target frame rate for headless mode
 // Note: Window mode uses vsync (~60 FPS typically), headless uses fixed timestep
@@ -53,8 +59,10 @@ fn main() {
         ));
     }
 
-    // Add our game logic (works on both platforms)
     app.add_plugins(BasicDemoPlugin);
+
+    #[cfg(not(feature = "window"))]
+    app.add_plugins(MatrixDemoPlugin);
 
     app.run();
 }

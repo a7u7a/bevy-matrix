@@ -12,10 +12,12 @@ This is a minimal Bevy app demonstrating platform-specific plugin configuration:
 
 ## Roadmap
 
+Milestones:
+
 - [x] Implement base bevy project with cross-compiling. Runs in mac and in the pi
-- [ ] (In progress) Add `rpi-rgb-led-matrix` library rust bindings, minimal working demo writing something to the screen using bevy in rust. Must run and compile in both targets but no output is expected in window mode.
-- [ ] Add render output. Create a minimal bevy setup that renders a cube in the a window (mac)
-- [ ] Add Bevy rendering in headless rpi, minimal working demo that renders the same cube to the led matrix. 
+- [x] Add `rpi-rgb-led-matrix` library rust bindings, minimal working demo writing something to the screen using bevy in rust. Must run and compile in both targets but no output is expected in window mode.
+- [ ] Add basic render output. Create a minimal bevy setup that renders a cube in the a window (mac only)
+- [ ] Add Bevy rendering in headless rpi, minimal working demo that renders the scene from the previous milestone to the led matrix.
   - Can we render in a context that has no window? can we access the camera or some way of rendering target?
 - [ ] Integrate bevy and matrix: Once access to the rendered bevy camera output buffer is confirmed we will try to write the frame to the matrix screen using the rpi-rgb-led-matrix rust bindings
 
@@ -151,13 +153,13 @@ app.add_plugins((
 ```
 
 **Key insights:**
+
 - `MinimalPlugins` doesn't include a schedule runner. Headless apps need `ScheduleRunnerPlugin` to continuously run the Update schedule.
 - **Frame rate consistency:** Both platforms target ~60 FPS, but differently:
   - **Window mode:** Event-driven loop (WinitPlugin) synchronized to vsync
   - **Headless mode:** Fixed timestep loop (16.67ms delay)
     - They're not perfectly synchronized but close enough for game logic
     - Without window (headless mode) we MUST use ScheduleRunnerPlugin to have any loop at all
-
 
 ## Code Structure
 
@@ -189,6 +191,7 @@ src/
 **Why explicit imports?**
 
 Example: To use `.chain()` for system ordering, we need:
+
 ```rust
 use bevy::ecs::schedule::IntoScheduleConfigs;
 app.add_systems(Startup, (add_people, update_people).chain());

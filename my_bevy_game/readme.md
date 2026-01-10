@@ -106,105 +106,19 @@ cp lib/librgbmatrix.a ~/cross-libs/aarch64-linux-gnu/
 
 Now we have a basic cross compiling setup for the game.
 
-### Cross compile the game for Pi
+### Cross-compile the game for Pi
 
-Build the game for Raspberry Pi from Mac:
-
-```bash
-cargo build --release --target aarch64-unknown-linux-gnu --features matrix --no-default-features
-```
-
-Copy the binary to Pi:
+On Mac:
 
 ```bash
-scp target/aarch64-unknown-linux-gnu/release/my_bevy_game ayu@pi.local:~/
-```
-
-Copy logs 
-```bash
-scp ayu@pi.local:~/debug.log /Users/userfriendly/code/rpi-wgpu/.cursor/debug.log
+./deploy.sh
 ```
 
 Run on Pi:
 
 ```bash
-./my_bevy_game
+sudo ./my_bevy_game
 ```
-
-**Expected output:**
-
-```
-hello Elaina Hume!
-hello Renzo Hume!
-hello Zayna Nieves!
-...
-```
-
-Repeating every 2 seconds. (Use `sudo ./my_bevy_game` when matrix control is added for GPIO access.)
-
-
-## How It Works
-
-The code uses conditional compilation to select appropriate plugins:
-
-```rust
-#[cfg(feature = "window")]
-app.add_plugins(DefaultPlugins);  // Mac: full windowing & rendering
-
-#[cfg(not(feature = "window"))]
-// Minimal plugins doesn't include a default scheduler so we need to add it here
-app.add_plugins((
-    ScheduleRunnerPlugin { ... },  // Pi: headless loop
-    TimePlugin,                     // Pi: time tracking
-));
-```
-
-**Key insights:**
-
-- `MinimalPlugins` doesn't include a schedule runner. Headless apps need `ScheduleRunnerPlugin` to continuously run the Update schedule.
-- **Frame rate consistency:** Both platforms target ~60 FPS, but differently:
-  - **Window mode:** Event-driven loop (WinitPlugin) synchronized to vsync
-  - **Headless mode:** Fixed timestep loop (16.67ms delay)
-    - They're not perfectly synchronized but close enough for game logic
-    - Without window (headless mode) we MUST use ScheduleRunnerPlugin to have any loop at all
-
-## Code Structure
-
-```
-src/
-├── main.rs        # Platform-specific plugin setup (conditional compilation)
-└── basic_demo.rs  # Platform-agnostic game logic (ECS components & systems)
-```
-
-**Bevy concepts demonstrated:**
-
-- **Components**: Data attached to entities (`Person`, `Name`)
-- **Resources**: Global data (`GreetTimer`)
-- **Systems**: Functions that operate on components
-  - Startup systems: Run once at app start
-  - Update systems: Run every frame
-- **Queries**: Access entities with specific components
-
-**Benefits of this structure:**
-
-- Game logic is platform-independent
-- Easy to test headless mode on Mac
-- Clear separation of concerns
-- Explicit imports (no `use bevy::prelude::*`)
-- Optimized dev profile for faster iteration
-  - First compile: ~20s (dependencies optimized once)
-  - Incremental: ~2-3s (only your code recompiles)
-
-**Why explicit imports?**
-
-Example: To use `.chain()` for system ordering, we need:
-
-```rust
-use bevy::ecs::schedule::IntoScheduleConfigs;
-app.add_systems(Startup, (add_people, update_people).chain());
-```
-
-In Rust, trait methods require the trait to be in scope. Explicit imports make it clear where each type comes from, which is helpful for learning Bevy's structure.
 
 ## Performance Tips for Pi
 

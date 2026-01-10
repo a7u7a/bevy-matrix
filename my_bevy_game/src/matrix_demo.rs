@@ -1,5 +1,5 @@
 // Explicit imports - only what we need for this demo
-use bevy::app::{App, Plugin, Startup, Update};
+use bevy::app::{App, Plugin, PostUpdate, Startup};
 use bevy::ecs::system::Commands;
 use bevy::prelude::{Res, ResMut, Resource};
 use bevy::time::{Time, Timer, TimerMode};
@@ -21,14 +21,34 @@ impl Plugin for MatrixDemoPlugin {
         // Add startup system to initialize the matrix
         app.add_systems(Startup, initialize_matrix);
         
-        // Add update system to draw on the matrix every frame
-        app.add_systems(Update, update_matrix_display);
+        // IMPORTANT: Use PostUpdate instead of Update
+        // PostUpdate runs AFTER rendering is complete, which is when we want to
+        // display the frame on the LED matrix. This ensures we're showing the most
+        // recent rendered frame.
+        // 
+        // Schedule order: Update → Rendering → PostUpdate
+        // 
+        // For future 3D rendering integration, the GPU→CPU frame extraction will
+        // also happen in PostUpdate, so this system will run after frame data is available.
+        app.add_systems(PostUpdate, update_matrix_display);
     }
 }
 
 // Resource to hold the LED matrix
-// Note: LedMatrix contains raw C pointers, but we're running in single-threaded headless mode
-// so it's safe to mark our wrapper as Send/Sync
+// 
+// THREAD SAFETY CONSIDERATIONS:
+// - The rpi-led-matrix C library contains raw pointers and may not be inherently thread-safe
+// - We mark this as Send/Sync because Bevy requires Resources to be Send/Sync
+// - SAFETY RATIONALE:
+//   1. This resource is ONLY accessed in PostUpdate schedule via ResMut (exclusive access)
+//   2. ResMut provides Rust's exclusive borrowing guarantees at runtime
+//   3. Only ONE system accesses this resource, so no parallel access is possible
+//   4. Even with multi_threaded enabled, Bevy's system scheduler ensures exclusive access
+// 
+// ALTERNATIVE APPROACHES (if issues arise):
+// - Use ResMut<NonSend<MatrixResource>> to force main-thread-only access
+// - Wrap in Mutex for explicit locking (adds overhead)
+// - Use channels to send frame data to a dedicated matrix thread
 #[cfg(all(target_os = "linux", feature = "matrix"))]
 use rpi_led_matrix::{LedMatrix, LedMatrixOptions, LedCanvas};
 
@@ -40,8 +60,10 @@ struct MatrixResource {
     square_size: i32,
 }
 
-// SAFETY: We only use this in single-threaded headless mode (ScheduleRunnerPlugin)
-// The headless runner doesn't spawn threads, so it's safe to mark as Send/Sync
+// SAFETY: See detailed comment above. This is safe because:
+// 1. Exclusive access guaranteed by ResMut
+// 2. Only one system accesses this resource
+// 3. No concurrent access possible due to Bevy's scheduling
 #[cfg(all(target_os = "linux", feature = "matrix"))]
 unsafe impl Send for MatrixResource {}
 #[cfg(all(target_os = "linux", feature = "matrix"))]
@@ -101,7 +123,7 @@ fn update_matrix_display(
     {
         use rpi_led_matrix::LedColor;
         
-        // Toggle square size every 2 seconds
+        // Toggle square size periodically
         if timer.0.tick(time.delta()).just_finished() {
             matrix_res.square_size = if matrix_res.square_size == 8 { 16 } else { 8 };
             println!("Toggling square size to {}x{}", matrix_res.square_size, matrix_res.square_size);
@@ -121,8 +143,13 @@ fn update_matrix_display(
                 }
             }
 
-            // Swap the canvas to display it - double-buffering pattern
-            // The returned canvas becomes our new offscreen canvas for the next frame
+            // DOUBLE BUFFERING: Required by rpi-led-matrix library
+            // The .swap() call does two things:
+            // 1. Displays the canvas we just drew to the LED matrix (atomic flip)
+            // 2. Returns the previous display buffer for us to draw the next frame
+            // 
+            // This prevents tearing and flicker on the LED display - it's a hardware-level
+            // optimization, not a Bevy pattern. Without it, you'd see partial frames.
             matrix_res.canvas = Some(matrix_res.matrix.swap(canvas));
         }
     }

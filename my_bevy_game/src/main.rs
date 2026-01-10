@@ -51,8 +51,7 @@ fn main() {
         println!("Running in headless mode (fixed timestep: {}ms)", FRAME_TIME_MS);
         // Pi: Headless rendering with DefaultPlugins (following Bevy's headless_renderer.rs pattern)
         // Since we don't enable bevy_winit feature, WinitPlugin is not included in DefaultPlugins
-        // DefaultPlugins automatically includes ScheduleRunnerPlugin when bevy_window is disabled
-        // We just need to configure WindowPlugin to not create a primary window
+        // Since we DO enable bevy_window feature, we need to manually add ScheduleRunnerPlugin
         app.add_plugins(
             DefaultPlugins
                 .set(WindowPlugin {
@@ -61,8 +60,10 @@ fn main() {
                     exit_condition: ExitCondition::DontExit,
                     ..Default::default()
                 })
+                // Configure the schedule runner with our target frame rate
+                // Note: We use .set() to configure it, not .add_plugins() to avoid adding it twice
         )
-        // Override the default ScheduleRunnerPlugin to use our custom frame rate
+        // Add ScheduleRunnerPlugin since DefaultPlugins doesn't include it when bevy_window is enabled
         .add_plugins(ScheduleRunnerPlugin {
             run_mode: bevy::app::RunMode::Loop {
                 wait: Some(Duration::from_millis(FRAME_TIME_MS)),

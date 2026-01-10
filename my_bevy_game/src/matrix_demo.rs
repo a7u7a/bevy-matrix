@@ -16,7 +16,7 @@ pub struct MatrixDemoPlugin;
 impl Plugin for MatrixDemoPlugin {
     fn build(&self, app: &mut App) {
         // Insert timer resource
-        app.insert_resource(SquareTimer(Timer::from_seconds(2.0, TimerMode::Repeating)));
+        app.insert_resource(SquareTimer(Timer::from_seconds(0.25, TimerMode::Repeating)));
         
         // Add startup system to initialize the matrix
         app.add_systems(Startup, initialize_matrix);
@@ -47,7 +47,12 @@ unsafe impl Send for MatrixResource {}
 #[cfg(all(target_os = "linux", feature = "matrix"))]
 unsafe impl Sync for MatrixResource {}
 
-fn initialize_matrix(mut commands: Commands) {
+fn initialize_matrix(
+    #[cfg(all(target_os = "linux", feature = "matrix"))]
+    mut commands: Commands,
+    #[cfg(not(all(target_os = "linux", feature = "matrix")))]
+    _commands: Commands,
+) {
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     {
         println!("Initializing LED matrix...");

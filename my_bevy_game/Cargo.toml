@@ -29,10 +29,26 @@ window = [
     "bevy/x11",                  # X11 support (Linux desktop)
     "bevy/webgpu",               # WebGPU support (needed for GPU rendering)
 ]
-# Matrix mode - minimal headless features
+
 matrix = [
     "rpi-led-matrix",
     "bevy/multi_threaded",       # Multi-threading support
+    # Rendering features for headless 3D (WITHOUT wayland/winit to avoid cross-compile issues)
+    "bevy/bevy_render",          # Core rendering pipeline
+    "bevy/bevy_pbr",             # PBR materials and lighting (3D)
+    "bevy/bevy_scene",           # Scene management
+    "bevy/bevy_gltf",            # GLTF asset loading
+    "bevy/bevy_camera",          # Camera components
+    "bevy/bevy_light",           # Light components
+    "bevy/bevy_mesh",            # Mesh types
+    "bevy/bevy_image",           # Image handling
+    "bevy/bevy_shader",          # Shader support
+    "bevy/bevy_color",           # Color types
+    "bevy/bevy_window",          # Window types (needed for render targets, but no actual window)
+    "bevy/png",                  # PNG texture support
+    "bevy/tonemapping_luts",     # Tonemapping
+    # Note: We explicitly DO NOT include bevy_winit, x11, or wayland
+    # to avoid display server dependencies during cross-compilation
 ]
 
 # Optimize dev builds for faster iteration (Bevy best practice)

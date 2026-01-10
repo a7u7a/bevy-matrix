@@ -16,7 +16,8 @@ Milestones:
 
 - [x] Implement base bevy project with cross-compiling. Runs in mac and in the pi
 - [x] Add `rpi-rgb-led-matrix` library rust bindings, minimal working demo writing something to the screen using bevy in rust. Must run and compile in both targets but no output is expected in window mode.
-- [ ] (In progress) Add basic render output. Create a minimal bevy setup that renders a cube in the a window (mac only)
+- [x] Add basic render output. Create a minimal bevy setup that renders a cube in the a window (mac only)
+- [x] Make the above scene compile on both targets
 - [ ] Add Bevy rendering in headless rpi, minimal working demo that renders the scene from the previous milestone to the led matrix.
   - Can we render in a context that has no window? can we access the camera or some way of rendering target?
 - [ ] Integrate bevy and matrix: Once access to the rendered bevy camera output buffer is confirmed we will try to write the frame to the matrix screen using the rpi-rgb-led-matrix rust bindings

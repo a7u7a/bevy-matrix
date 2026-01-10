@@ -1,15 +1,12 @@
 // Explicit imports - only what we need
 use bevy::app::App;
-
-// For fully explicit imports, see: https://docs.rs/bevy/latest/bevy/struct.DefaultPlugins.html
-#[cfg(feature = "window")]
 use bevy::DefaultPlugins;
 
-// Headless mode plugins - minimal set for console-only operation
+// Headless mode plugins
 #[cfg(not(feature = "window"))]
-use bevy::app::ScheduleRunnerPlugin;
+use bevy::app::{PluginGroup, ScheduleRunnerPlugin};
 #[cfg(not(feature = "window"))]
-use bevy::time::TimePlugin;
+use bevy::window::{ExitCondition, WindowPlugin};
 #[cfg(not(feature = "window"))]
 use std::time::Duration;
 
@@ -52,17 +49,25 @@ fn main() {
     #[cfg(not(feature = "window"))]
     {
         println!("Running in headless mode (fixed timestep: {}ms)", FRAME_TIME_MS);
-        // Pi: Minimal plugins for headless operation
-        // Window mode uses vsync-driven event loop (WinitPlugin)
-        // Headless mode uses fixed timestep loop (ScheduleRunnerPlugin)
-        app.add_plugins((
-            ScheduleRunnerPlugin {
-                run_mode: bevy::app::RunMode::Loop {
-                    wait: Some(Duration::from_millis(FRAME_TIME_MS)),
-                },
+        // Pi: Headless rendering with DefaultPlugins (following Bevy's headless_renderer.rs pattern)
+        // Since we don't enable bevy_winit feature, WinitPlugin is not included in DefaultPlugins
+        // DefaultPlugins automatically includes ScheduleRunnerPlugin when bevy_window is disabled
+        // We just need to configure WindowPlugin to not create a primary window
+        app.add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: None,
+                    // Don't automatically exit due to having no windows
+                    exit_condition: ExitCondition::DontExit,
+                    ..Default::default()
+                })
+        )
+        // Override the default ScheduleRunnerPlugin to use our custom frame rate
+        .add_plugins(ScheduleRunnerPlugin {
+            run_mode: bevy::app::RunMode::Loop {
+                wait: Some(Duration::from_millis(FRAME_TIME_MS)),
             },
-            TimePlugin,
-        ));
+        });
     }
 
     app.add_plugins(BasicDemoPlugin);

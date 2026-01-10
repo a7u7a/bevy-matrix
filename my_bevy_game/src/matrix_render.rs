@@ -40,7 +40,7 @@ use rpi_led_matrix::{LedCanvas, LedMatrix, LedMatrixOptions};
 #[derive(Resource)]
 pub struct MatrixResource {
     pub matrix: LedMatrix,
-    pub canvas: Option<LedCanvas>,
+    pub displayed_frame: Vec<u8>, // Track what's currently displayed
 }
 
 // SAFETY: MatrixResource is only accessed via ResMut (exclusive access)
@@ -94,9 +94,12 @@ fn initialize_matrix(mut commands: Commands) {
         options.set_cols(64);
         options.set_hardware_mapping("adafruit-hat-pwm");
         options.set_refresh_rate(true);
+        
+        // Use default PWM settings (11 bits, 130 ns)
+        // Aggressive settings (pwm_bits=5) caused the screen to not light up
         options.set_pwm_lsb_nanoseconds(130);
         
-        // Optional: adjust brightness (0-100)
+        // Adjust brightness (0-100)
         if let Err(e) = options.set_brightness(50) {
             eprintln!("Warning: Failed to set brightness: {}", e);
         }
@@ -106,12 +109,12 @@ fn initialize_matrix(mut commands: Commands) {
         let matrix = LedMatrix::new(Some(options), None)
             .expect("Failed to create LED matrix - check hardware connection and permissions");
         
-        // Create the offscreen canvas
-        let canvas = matrix.offscreen_canvas();
+        // DON'T use offscreen canvas - draw directly to matrix to avoid flickering from swaps
+        // The matrix itself implements the Canvas trait, so we can draw directly on it
         
         commands.insert_resource(MatrixResource {
             matrix,
-            canvas: Some(canvas),
+            displayed_frame: Vec::new(), // Empty initially
         });
         println!("LED matrix initialized successfully!");
     }
@@ -204,7 +207,7 @@ struct ImageCopier {
     buffer: Buffer,
     enabled: Arc<AtomicBool>,
     src_image: Handle<Image>,
-    padded_bytes_per_row: usize,
+    pub padded_bytes_per_row: usize,
 }
 
 impl ImageCopier {
@@ -214,8 +217,10 @@ impl ImageCopier {
         render_device: &RenderDevice,
     ) -> ImageCopier {
         // Calculate row padding for GPU alignment requirements
-        let padded_bytes_per_row =
-            RenderDevice::align_copy_bytes_per_row((size.width) as usize) * 4;
+        // IMPORTANT: Must match the calculation in ImageCopyDriver::run()
+        // For RGBA8: width * 4 bytes per pixel, then align
+        let unpadded_bytes_per_row = size.width as usize * 4; // RGBA = 4 bytes per pixel
+        let padded_bytes_per_row = RenderDevice::align_copy_bytes_per_row(unpadded_bytes_per_row);
 
         // Create CPU-readable buffer for frame data
         let cpu_buffer = render_device.create_buffer(&BufferDescriptor {
@@ -357,51 +362,124 @@ fn receive_image_from_buffer(
 /// System in main world that receives frame data and displays it on LED matrix
 fn receive_and_display_frame(
     receiver: Res<MainWorldReceiver>,
+    image_copiers: Query<&ImageCopier>,
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     mut matrix_res: ResMut<MatrixResource>,
 ) {
-    // Try to receive frame data (non-blocking)
-    if let Ok(image_data) = receiver.try_recv() {
+    // Try to get a frame without blocking
+    // We only process if there's actually a new frame available
+    let Ok(mut padded_image_data) = receiver.try_recv() else {
+        // No new frame, don't update display
+        return;
+    };
+    
+    // Drain any additional queued frames and use ONLY the latest
+    // This prevents displaying stale frames if rendering is faster than display
+    let mut frame_count = 1;
+    while let Ok(newer_data) = receiver.try_recv() {
+        frame_count += 1;
+        padded_image_data = newer_data;
+    }
+    
+    // Log frame backlog for debugging
+    if frame_count > 1 {
+        println!("Frame backlog: received {} frames, displaying latest", frame_count);
+    }
+        // Get the ImageCopier to know about row padding
+        let Ok(image_copier) = image_copiers.single() else {
+            eprintln!("ERROR: ImageCopier not found");
+            return;
+        };
+        
+        let width = RENDER_WIDTH as usize;
+        let height = RENDER_HEIGHT as usize;
+        let row_bytes = width * 4; // RGBA = 4 bytes per pixel
+        let aligned_row_bytes = image_copier.padded_bytes_per_row;
+        
+        // Debug output (only print once)
+        static mut DEBUG_PRINTED: bool = false;
+        unsafe {
+            if !DEBUG_PRINTED {
+                println!("DEBUG: Buffer size: {} bytes", padded_image_data.len());
+                println!("DEBUG: Expected unpadded: {} bytes ({}x{} RGBA)", width * height * 4, width, height);
+                println!("DEBUG: Row bytes: {}, Aligned row bytes: {}", row_bytes, aligned_row_bytes);
+                println!("DEBUG: Padding needed: {}", row_bytes != aligned_row_bytes);
+                DEBUG_PRINTED = true;
+            }
+        }
+        
+        // Unpad the buffer if necessary (GPU buffers are aligned to 256 bytes per row)
+        // This is CRITICAL - without this, the image appears shifted/glitchy!
+        let image_data: Vec<u8> = if row_bytes == aligned_row_bytes {
+            // No padding, use as-is
+            padded_image_data
+        } else {
+            // Remove padding from each row
+            // Each row in the buffer is aligned_row_bytes, but we only need row_bytes
+            padded_image_data
+                .chunks(aligned_row_bytes)
+                .take(height)
+                .flat_map(|row| &row[..row_bytes.min(row.len())])
+                .cloned()
+                .collect()
+        };
+        
         #[cfg(all(target_os = "linux", feature = "matrix"))]
         {
             use rpi_led_matrix::LedColor;
             
-            // Take the canvas out temporarily
-            if let Some(mut canvas) = matrix_res.canvas.take() {
-                // Convert RGBA → RGB and write to LED matrix
-                // image_data is RGBA format: [R, G, B, A, R, G, B, A, ...]
-                // We need to extract RGB and write to 64x64 matrix
+            // Debug: Log if we're getting frame backlog
+            if frame_count > 1 {
+                println!("Frame backlog: received {} frames, displaying latest", frame_count);
+            }
+            
+            // Draw directly to the matrix (no offscreen canvas, no swap)
+            // This should eliminate the "black flash" from swapping buffers
+            
+            let expected_size = width * height * 4; // RGBA
+            if image_data.len() != expected_size {
+                eprintln!("WARNING: Image data size mismatch! Expected {}, got {}", 
+                         expected_size, image_data.len());
+            }
+            
+            // Only update if frame changed
+            let frame_changed = matrix_res.displayed_frame != image_data;
+            
+            if frame_changed {
+                println!("Frame changed, updating display (direct draw, no swap)...");
                 
-                let width = RENDER_WIDTH as usize;
-                let height = RENDER_HEIGHT as usize;
+                // Get the display canvas (not offscreen)
+                let mut canvas = matrix_res.matrix.canvas();
                 
+                // Draw every pixel directly to the displayed canvas
                 for y in 0..height {
                     for x in 0..width {
-                        // Calculate index in RGBA buffer (4 bytes per pixel)
                         let pixel_idx = (y * width + x) * 4;
                         
-                        if pixel_idx + 2 < image_data.len() {
+                        if pixel_idx + 3 <= image_data.len() {
                             let r = image_data[pixel_idx];
                             let g = image_data[pixel_idx + 1];
                             let b = image_data[pixel_idx + 2];
-                            // Alpha channel (pixel_idx + 3) is ignored
                             
                             let color = LedColor { red: r, green: g, blue: b };
+                            // Draw directly to the visible canvas - no swap needed!
                             canvas.set(x as i32, y as i32, &color);
                         }
                     }
                 }
                 
-                // Swap buffers to display the new frame
-                // This is hardware double-buffering required by the LED matrix library
-                matrix_res.canvas = Some(matrix_res.matrix.swap(canvas));
+                matrix_res.displayed_frame = image_data;
             }
         }
         
         #[cfg(not(all(target_os = "linux", feature = "matrix")))]
         {
-            println!("Matrix not available - received {} bytes of frame data", image_data.len());
+            if frame_count > 1 {
+                println!("Frame backlog: received {} frames, displaying latest ({} bytes → {} bytes after unpadding)", 
+                         frame_count, padded_image_data.len(), image_data.len());
+            } else {
+                println!("Matrix not available - received {} bytes of frame data", image_data.len());
+            }
         }
-    }
 }
 

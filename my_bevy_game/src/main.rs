@@ -31,9 +31,9 @@ use matrix_render::MatrixRenderPlugin;
 
 // Target frame rate for headless mode
 // Note: Window mode uses vsync (~60 FPS typically), headless uses fixed timestep
-// These won't be perfectly synchronized, but should be close enough for game logic
+// 30 FPS provides good balance between smoothness and Pi Zero 2 W performance
 #[cfg(not(feature = "window"))]
-const TARGET_FPS: u64 = 60;
+const TARGET_FPS: u64 = 30;
 #[cfg(not(feature = "window"))]
 const FRAME_TIME_MS: u64 = 1000 / TARGET_FPS;
 

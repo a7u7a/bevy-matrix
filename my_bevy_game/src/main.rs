@@ -23,12 +23,6 @@ mod render_demo;
 #[cfg(feature = "window")]
 use render_demo::RenderDemoPlugin;
 
-// Matrix demo only used in headless mode
-#[cfg(not(feature = "window"))]
-mod matrix_demo;
-#[cfg(not(feature = "window"))]
-use matrix_demo::MatrixDemoPlugin;
-
 // Matrix 3D rendering only used in headless mode
 #[cfg(not(feature = "window"))]
 mod matrix_render;
@@ -87,8 +81,8 @@ fn main() {
 
     #[cfg(not(feature = "window"))]
     {
-        // Add both matrix demo (simple 2D drawing) and matrix render (3D rendering)
-        app.add_plugins((MatrixDemoPlugin, MatrixRenderPlugin));
+        // Matrix mode: 3D rendering to LED matrix
+        app.add_plugins(MatrixRenderPlugin);
     }
 
     app.run();

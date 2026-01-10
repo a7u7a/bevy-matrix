@@ -5,10 +5,11 @@
 // 2. Copying texture from GPU to CPU via buffer
 // 3. Sending frame data to main world via channel
 
-use bevy::app::{App, Plugin, PostUpdate, Startup};
+use bevy::app::{App, Plugin, PostStartup, PostUpdate, Startup};
 use bevy::asset::{Assets, Handle};
 use bevy::camera::RenderTarget;
 use bevy::ecs::component::Component;
+use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::ecs::world::World;
 use bevy::image::Image;
@@ -29,14 +30,40 @@ use std::sync::{
 
 use crate::scene_setup::{setup_3d_scene, RENDER_HEIGHT, RENDER_WIDTH};
 
+// LED Matrix types (only available on Linux with matrix feature)
+#[cfg(all(target_os = "linux", feature = "matrix"))]
+use rpi_led_matrix::{LedCanvas, LedMatrix, LedMatrixOptions};
+
+/// Resource to hold the LED matrix hardware
+/// This is created during startup and used to display rendered frames
+#[cfg(all(target_os = "linux", feature = "matrix"))]
+#[derive(Resource)]
+pub struct MatrixResource {
+    pub matrix: LedMatrix,
+    pub canvas: Option<LedCanvas>,
+}
+
+// SAFETY: MatrixResource is only accessed via ResMut (exclusive access)
+// Bevy's scheduler ensures no concurrent access even in multi_threaded mode
+#[cfg(all(target_os = "linux", feature = "matrix"))]
+unsafe impl Send for MatrixResource {}
+#[cfg(all(target_os = "linux", feature = "matrix"))]
+unsafe impl Sync for MatrixResource {}
+
 /// Main plugin for headless 3D rendering to LED matrix
 pub struct MatrixRenderPlugin;
 
 impl Plugin for MatrixRenderPlugin {
     fn build(&self, app: &mut App) {
-        // Add systems to setup the scene and render target
+        // Initialize LED matrix hardware first
+        app.add_systems(Startup, initialize_matrix);
+        
+        // Setup 3D scene
         app.add_systems(Startup, setup_3d_scene);
-        app.add_systems(Startup, setup_render_target);
+        
+        // Setup render target in PostStartup (after render plugins are initialized)
+        // This ensures RenderDevice and other render resources are available
+        app.add_systems(PostStartup, setup_render_target);
         
         // Add the image copy plugin for GPU→CPU frame extraction
         app.add_plugins(ImageCopyPlugin);
@@ -55,7 +82,48 @@ struct MainWorldReceiver(Receiver<Vec<u8>>);
 #[derive(Resource, Deref)]
 struct RenderWorldSender(Sender<Vec<u8>>);
 
+/// Initialize the LED matrix hardware
+/// This runs once at startup to configure the matrix
+fn initialize_matrix(mut commands: Commands) {
+    #[cfg(all(target_os = "linux", feature = "matrix"))]
+    {
+        println!("Initializing LED matrix...");
+        
+        let mut options = LedMatrixOptions::new();
+        options.set_rows(64);
+        options.set_cols(64);
+        options.set_hardware_mapping("adafruit-hat-pwm");
+        options.set_refresh_rate(true);
+        options.set_pwm_lsb_nanoseconds(130);
+        
+        // Optional: adjust brightness (0-100)
+        if let Err(e) = options.set_brightness(50) {
+            eprintln!("Warning: Failed to set brightness: {}", e);
+        }
+        
+        println!("Matrix configuration: 64x64, adafruit-hat-pwm mapping");
+        
+        let matrix = LedMatrix::new(Some(options), None)
+            .expect("Failed to create LED matrix - check hardware connection and permissions");
+        
+        // Create the offscreen canvas
+        let canvas = matrix.offscreen_canvas();
+        
+        commands.insert_resource(MatrixResource {
+            matrix,
+            canvas: Some(canvas),
+        });
+        println!("LED matrix initialized successfully!");
+    }
+
+    #[cfg(not(all(target_os = "linux", feature = "matrix")))]
+    {
+        println!("Matrix feature not enabled - would initialize LED matrix");
+    }
+}
+
 /// Setup the render target (offscreen texture that camera will render to)
+/// Runs in PostStartup to ensure RenderDevice is available
 fn setup_render_target(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
@@ -79,11 +147,15 @@ fn setup_render_target(
     let render_target_handle = images.add(render_target_image);
 
     // Configure the camera to render to our texture instead of a window
-    if let Ok(mut camera) = camera_query.single_mut() {
-        camera.target = RenderTarget::Image(render_target_handle.clone().into());
-        println!("Camera configured to render to offscreen texture");
-    } else {
-        eprintln!("Warning: No camera found to configure render target");
+    match camera_query.single_mut() {
+        Ok(mut camera) => {
+            camera.target = RenderTarget::Image(render_target_handle.clone().into());
+            println!("Camera configured to render to offscreen texture");
+        }
+        Err(e) => {
+            eprintln!("ERROR: Failed to find camera for render target configuration: {:?}", e);
+            panic!("Cannot continue without camera");
+        }
     }
 
     // Spawn the ImageCopier component that will handle GPU→CPU transfer
@@ -92,7 +164,7 @@ fn setup_render_target(
         size,
         &render_device,
     ));
-
+    
     println!("Render target initialized successfully");
 }
 
@@ -243,10 +315,15 @@ impl render_graph::Node for ImageCopyDriver {
 
 /// System that receives frame data from GPU buffer and sends it to main world via channel
 fn receive_image_from_buffer(
-    image_copiers: Res<ImageCopiers>,
+    image_copiers: Option<Res<ImageCopiers>>,
     render_device: Res<RenderDevice>,
     sender: Res<RenderWorldSender>,
 ) {
+    // Check if ImageCopiers resource exists
+    let Some(image_copiers) = image_copiers else {
+        return; // Skip if not available yet
+    };
+    
     for image_copier in image_copiers.0.iter() {
         if !image_copier.enabled() {
             continue;
@@ -281,7 +358,7 @@ fn receive_image_from_buffer(
 fn receive_and_display_frame(
     receiver: Res<MainWorldReceiver>,
     #[cfg(all(target_os = "linux", feature = "matrix"))]
-    mut matrix_res: ResMut<crate::matrix_demo::MatrixResource>,
+    mut matrix_res: ResMut<MatrixResource>,
 ) {
     // Try to receive frame data (non-blocking)
     if let Ok(image_data) = receiver.try_recv() {
@@ -316,6 +393,7 @@ fn receive_and_display_frame(
                 }
                 
                 // Swap buffers to display the new frame
+                // This is hardware double-buffering required by the LED matrix library
                 matrix_res.canvas = Some(matrix_res.matrix.swap(canvas));
             }
         }

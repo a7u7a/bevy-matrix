@@ -26,10 +26,10 @@ Milestones:
 
 - Add platform-specific controls demo (Basic camera orbit with mouse on mac, playstation controller on raspberry pi (details TBD))
 - Implement a bigger display size on mac (Keeping square aspect ratio for simplcity)
+- How would we switch to event-driven rendering on the Pi? (Instead of fixed timestep)
 - Implement tooling to help speed up cross-compile development and testing
 - Document rpi gpu driver installation
 - Test dev profiles on the pi
-
 
 ## Running on Mac
 
@@ -138,6 +138,7 @@ hello Zayna Nieves!
 ```
 
 Repeating every 2 seconds. (Use `sudo ./my_bevy_game` when matrix control is added for GPIO access.)
+
 
 ## How It Works
 

@@ -54,10 +54,10 @@ use rpi_led_matrix::{LedMatrix, LedMatrixOptions, LedCanvas};
 
 #[cfg(all(target_os = "linux", feature = "matrix"))]
 #[derive(Resource)]
-struct MatrixResource {
-    matrix: LedMatrix,
-    canvas: Option<LedCanvas>,
-    square_size: i32,
+pub struct MatrixResource {
+    pub matrix: LedMatrix,
+    pub canvas: Option<LedCanvas>,
+    pub square_size: i32,
 }
 
 // SAFETY: See detailed comment above. This is safe because:

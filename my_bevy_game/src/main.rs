@@ -14,6 +14,9 @@ use std::time::Duration;
 mod basic_demo;
 use basic_demo::BasicDemoPlugin;
 
+// Shared 3D scene setup (used by both render_demo and future matrix_render)
+mod scene_setup;
+
 // Render demo only used in window mode
 #[cfg(feature = "window")]
 mod render_demo;
@@ -25,6 +28,12 @@ use render_demo::RenderDemoPlugin;
 mod matrix_demo;
 #[cfg(not(feature = "window"))]
 use matrix_demo::MatrixDemoPlugin;
+
+// Matrix 3D rendering only used in headless mode
+#[cfg(not(feature = "window"))]
+mod matrix_render;
+#[cfg(not(feature = "window"))]
+use matrix_render::MatrixRenderPlugin;
 
 // Target frame rate for headless mode
 // Note: Window mode uses vsync (~60 FPS typically), headless uses fixed timestep
@@ -77,7 +86,10 @@ fn main() {
     app.add_plugins(RenderDemoPlugin);
 
     #[cfg(not(feature = "window"))]
-    app.add_plugins(MatrixDemoPlugin);
+    {
+        // Add both matrix demo (simple 2D drawing) and matrix render (3D rendering)
+        app.add_plugins((MatrixDemoPlugin, MatrixRenderPlugin));
+    }
 
     app.run();
 }

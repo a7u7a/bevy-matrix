@@ -24,10 +24,12 @@ Milestones:
 
 ## Pending
 
+- Add platform-specific controls demo (Basic camera orbit with mouse on mac, playstation controller on raspberry pi (details TBD))
+- Implement a bigger display size on mac (Keeping square aspect ratio for simplcity)
 - Implement tooling to help speed up cross-compile development and testing
 - Document rpi gpu driver installation
 - Test dev profiles on the pi
-- Check how to run multithreaded bevy code in raspi with `SchedulerRunnerPlugin`
+
 
 ## Running on Mac
 

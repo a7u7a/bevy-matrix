@@ -2447,6 +2447,7 @@ name = "my_bevy_game"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "crossbeam-channel",
  "rpi-led-matrix",
 ]
 

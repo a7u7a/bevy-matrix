@@ -29,6 +29,10 @@ use std::sync::{
 
 use crate::scene_setup::{setup_3d_scene, RENDER_HEIGHT, RENDER_WIDTH};
 
+/// Set to true to bypass GPU rendering and display a static test pattern
+/// This helps isolate whether flickering is caused by GPU pipeline or matrix library
+const TEST_PATTERN_MODE: bool = true;
+
 // LED Matrix types (only available on Linux with matrix feature)
 #[cfg(all(target_os = "linux", feature = "matrix"))]
 use rpi_led_matrix::{LedCanvas, LedMatrix, LedMatrixOptions};
@@ -42,7 +46,9 @@ pub struct MatrixResource {
     /// Offscreen canvas for double buffering - we draw here, then swap atomically
     /// Using Option allows us to take() ownership without creating a placeholder canvas
     pub offscreen_canvas: Option<LedCanvas>,
-    pub displayed_frame: Vec<u8>, // Track what's currently displayed
+    /// Cache of last valid frame data - used to maintain display if GPU frame not ready
+    /// This ensures we always have something to display and can swap every frame
+    pub last_valid_frame: Option<Vec<u8>>,
 }
 
 // SAFETY: MatrixResource is only accessed via ResMut (exclusive access)
@@ -96,17 +102,9 @@ fn initialize_matrix(mut commands: Commands) {
         options.set_cols(64);
         options.set_hardware_mapping("adafruit-hat-pwm");
         options.set_refresh_rate(true);
+        // Using EXACT same settings as working demo - no extra PWM/brightness settings
         
-        // Use default PWM settings (11 bits, 130 ns)
-        // Aggressive settings (pwm_bits=5) caused the screen to not light up
-        options.set_pwm_lsb_nanoseconds(130);
-        
-        // Adjust brightness (0-100)
-        if let Err(e) = options.set_brightness(50) {
-            eprintln!("Warning: Failed to set brightness: {}", e);
-        }
-        
-        println!("Matrix configuration: 64x64, adafruit-hat-pwm mapping");
+        println!("Matrix configuration: 64x64, adafruit-hat-pwm mapping (matching working demo)");
         
         let matrix = LedMatrix::new(Some(options), None)
             .expect("Failed to create LED matrix - check hardware connection and permissions");
@@ -119,7 +117,7 @@ fn initialize_matrix(mut commands: Commands) {
         commands.insert_resource(MatrixResource {
             matrix,
             offscreen_canvas: Some(offscreen_canvas),  // Wrap in Option for take() pattern
-            displayed_frame: Vec::new(), // Empty initially
+            last_valid_frame: None,  // Will be populated on first valid frame
         });
         println!("LED matrix initialized successfully with double buffering!");
     }
@@ -364,88 +362,161 @@ fn receive_image_from_buffer(
     }
 }
 
+/// Check if frame data is valid (not all black/empty)
+/// Returns true if at least some pixels have non-zero values
+fn is_valid_frame(data: &[u8]) -> bool {
+    // Sample every 256th byte to check quickly without iterating entire buffer
+    // For a 64x64 RGBA image (16384 bytes), this checks ~64 samples
+    data.iter().step_by(256).any(|&b| b > 0)
+}
+
 /// System in main world that receives frame data and displays it on LED matrix
+/// CRITICAL: This must swap EVERY frame to maintain proper matrix library state
 fn receive_and_display_frame(
     receiver: Res<MainWorldReceiver>,
     image_copiers: Query<&ImageCopier>,
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     mut matrix_res: ResMut<MatrixResource>,
 ) {
-    // Try to get a frame without blocking
-    // We only process if there's actually a new frame available
-    let Ok(mut padded_image_data) = receiver.try_recv() else {
-        // No new frame, don't update display
-        return;
-    };
-    
-    // Drain any additional queued frames and use ONLY the latest
-    // This prevents displaying stale frames if rendering is faster than display
-    while let Ok(newer_data) = receiver.try_recv() {
-        padded_image_data = newer_data;
-    }
-    
-    // Get the ImageCopier to know about row padding
-    let Ok(image_copier) = image_copiers.single() else {
-        eprintln!("ERROR: ImageCopier not found");
-        return;
-    };
-    
     let width = RENDER_WIDTH as usize;
     let height = RENDER_HEIGHT as usize;
     let row_bytes = width * 4; // RGBA = 4 bytes per pixel
+    
+    // Get the ImageCopier to know about row padding
+    let Ok(image_copier) = image_copiers.single() else {
+        // ImageCopier not ready yet - still swap to maintain timing
+        #[cfg(all(target_os = "linux", feature = "matrix"))]
+        {
+            if let Some(canvas) = matrix_res.offscreen_canvas.take() {
+                matrix_res.offscreen_canvas = Some(matrix_res.matrix.swap(canvas));
+            }
+        }
+        return;
+    };
+    
     let aligned_row_bytes = image_copier.padded_bytes_per_row;
     
-    // Debug output (only print once)
-    static mut DEBUG_PRINTED: bool = false;
-    unsafe {
-        if !DEBUG_PRINTED {
-            println!("DEBUG: Buffer size: {} bytes", padded_image_data.len());
-            println!("DEBUG: Expected unpadded: {} bytes ({}x{} RGBA)", width * height * 4, width, height);
-            println!("DEBUG: Row bytes: {}, Aligned row bytes: {}", row_bytes, aligned_row_bytes);
-            println!("DEBUG: Padding needed: {}", row_bytes != aligned_row_bytes);
-            println!("DEBUG: Using DOUBLE BUFFERING for flicker-free display");
-            DEBUG_PRINTED = true;
-        }
+    // Try to get frame(s) from channel - use latest available
+    let mut new_padded_data: Option<Vec<u8>> = None;
+    while let Ok(data) = receiver.try_recv() {
+        new_padded_data = Some(data);
     }
     
-    // Unpad the buffer if necessary (GPU buffers are aligned to 256 bytes per row)
-    // This is CRITICAL - without this, the image appears shifted/glitchy!
-    let image_data: Vec<u8> = if row_bytes == aligned_row_bytes {
-        // No padding, use as-is
-        padded_image_data
-    } else {
-        // Remove padding from each row
-        // Each row in the buffer is aligned_row_bytes, but we only need row_bytes
-        padded_image_data
-            .chunks(aligned_row_bytes)
-            .take(height)
-            .flat_map(|row| &row[..row_bytes.min(row.len())])
-            .cloned()
-            .collect()
-    };
+    // Process new frame if we got one
+    let new_frame: Option<Vec<u8>> = new_padded_data.map(|padded_image_data| {
+        // Debug output (only print once)
+        static mut DEBUG_PRINTED: bool = false;
+        unsafe {
+            if !DEBUG_PRINTED {
+                println!("DEBUG: Buffer size: {} bytes", padded_image_data.len());
+                println!("DEBUG: Expected unpadded: {} bytes ({}x{} RGBA)", width * height * 4, width, height);
+                println!("DEBUG: Row bytes: {}, Aligned row bytes: {}", row_bytes, aligned_row_bytes);
+                println!("DEBUG: Padding needed: {}", row_bytes != aligned_row_bytes);
+                println!("DEBUG: Using DOUBLE BUFFERING + FRAME CACHING for flicker-free display");
+                DEBUG_PRINTED = true;
+            }
+        }
+        
+        // Unpad the buffer if necessary (GPU buffers are aligned to 256 bytes per row)
+        if row_bytes == aligned_row_bytes {
+            padded_image_data
+        } else {
+            padded_image_data
+                .chunks(aligned_row_bytes)
+                .take(height)
+                .flat_map(|row| &row[..row_bytes.min(row.len())])
+                .cloned()
+                .collect()
+        }
+    });
     
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     {
         use rpi_led_matrix::LedColor;
         
-        let expected_size = width * height * 4; // RGBA
-        if image_data.len() != expected_size {
-            eprintln!("WARNING: Image data size mismatch! Expected {}, got {}", 
-                     expected_size, image_data.len());
+        // Track frame statistics for debugging
+        static mut FRAME_NUM: u32 = 0;
+        static mut BLACK_FRAME_COUNT: u32 = 0;
+        static mut NO_FRAME_COUNT: u32 = 0;
+        static mut VALID_FRAME_COUNT: u32 = 0;
+        static mut NO_DISPLAY_COUNT: u32 = 0;
+        
+        unsafe { FRAME_NUM += 1; }
+        
+        // Determine which frame data to display:
+        // 1. If we have a new valid frame, use it and cache it
+        // 2. If new frame is black/invalid, use cached frame
+        // 3. If no new frame, use cached frame
+        // 4. If no cached frame either, swap with current canvas (maintains timing)
+        
+        // Clone the frame data to avoid borrow conflicts with canvas operations
+        let (frame_to_display, frame_source): (Option<Vec<u8>>, &str) = if let Some(new_data) = new_frame {
+            if is_valid_frame(&new_data) {
+                // Valid new frame - cache it and use it
+                unsafe { VALID_FRAME_COUNT += 1; }
+                matrix_res.last_valid_frame = Some(new_data.clone());
+                (Some(new_data), "new_valid")
+            } else {
+                // New frame is black/invalid - use cached if available
+                unsafe { BLACK_FRAME_COUNT += 1; }
+                (matrix_res.last_valid_frame.clone(), "cached_after_black")
+            }
+        } else {
+            // No new frame from GPU - use cached
+            unsafe { NO_FRAME_COUNT += 1; }
+            (matrix_res.last_valid_frame.clone(), "cached_no_new")
+        };
+        
+        let has_cached = matrix_res.last_valid_frame.is_some();
+        let will_draw = frame_to_display.is_some();
+        
+        // Log every frame for first 10, then every 10th frame
+        unsafe {
+            if FRAME_NUM <= 10 || FRAME_NUM % 10 == 0 {
+                println!("FRAME {}: source={}, has_cached={}, will_draw={} (valid={}, black={}, no_new={}, no_draw={})",
+                    FRAME_NUM, frame_source, has_cached, will_draw,
+                    VALID_FRAME_COUNT, BLACK_FRAME_COUNT, NO_FRAME_COUNT, NO_DISPLAY_COUNT);
+            }
         }
         
-        // Only update if frame changed
-        let frame_changed = matrix_res.displayed_frame != image_data;
-        
-        if frame_changed {
-            // DOUBLE BUFFERING: Draw to offscreen canvas, then swap atomically
-            // This prevents flickering by ensuring only complete frames are displayed
-            
-            // Take the canvas out of Option (no new canvas created!)
-            // This is the KEY FIX: we must NOT call offscreen_canvas() every frame
-            // as that creates new buffers and corrupts the matrix library state
-            if let Some(mut canvas) = matrix_res.offscreen_canvas.take() {
-                // Draw every pixel to the OFFSCREEN canvas (invisible to user)
+        // ALWAYS swap every frame - this is critical for matrix library timing
+        if let Some(mut canvas) = matrix_res.offscreen_canvas.take() {
+            if TEST_PATTERN_MODE {
+                // TEST MODE: Draw a simple static pattern to isolate flicker source
+                // This bypasses all GPU data - if this still flickers, issue is matrix library
+                // Pattern: red square on black background (similar to working demo)
+                let black = LedColor { red: 0, green: 0, blue: 0 };
+                let red = LedColor { red: 100, green: 0, blue: 0 };
+                
+                // Fill with black
+                for y in 0..height as i32 {
+                    for x in 0..width as i32 {
+                        canvas.set(x, y, &black);
+                    }
+                }
+                
+                // Draw 16x16 red square in center
+                let sq_size = 16;
+                let sq_start = (64 - sq_size) / 2;
+                for y in sq_start..(sq_start + sq_size) {
+                    for x in sq_start..(sq_start + sq_size) {
+                        canvas.set(x, y, &red);
+                    }
+                }
+                
+                unsafe {
+                    if FRAME_NUM <= 3 {
+                        println!("TEST PATTERN MODE: Drawing static red square (bypassing GPU)");
+                    }
+                }
+            } else if let Some(ref image_data) = frame_to_display {
+                let expected_size = width * height * 4;
+                if image_data.len() != expected_size {
+                    eprintln!("WARNING: Image data size mismatch! Expected {}, got {}", 
+                             expected_size, image_data.len());
+                }
+                
+                // Draw every pixel to the OFFSCREEN canvas
                 for y in 0..height {
                     for x in 0..width {
                         let pixel_idx = (y * width + x) * 4;
@@ -460,26 +531,35 @@ fn receive_and_display_frame(
                         }
                     }
                 }
-                
-                // ATOMIC SWAP on VSync: instantly swap offscreen↔visible
-                // swap() returns what was displayed (now becomes our new offscreen)
-                // This matches the C demo pattern: create once, swap forever
-                matrix_res.offscreen_canvas = Some(matrix_res.matrix.swap(canvas));
+            } else {
+                // NO frame to display - this is bad, we'll show stale buffer content!
+                unsafe { NO_DISPLAY_COUNT += 1; }
+                // Fill with a debug color (dim red) to make this visible
+                let debug_color = LedColor { red: 20, green: 0, blue: 0 };
+                for y in 0..height as i32 {
+                    for x in 0..width as i32 {
+                        canvas.set(x, y, &debug_color);
+                    }
+                }
+                println!("WARNING FRAME {}: No frame to display, filling with debug color!", unsafe { FRAME_NUM });
             }
             
-            matrix_res.displayed_frame = image_data;
+            // ATOMIC SWAP: Always swap to maintain matrix library timing
+            matrix_res.offscreen_canvas = Some(matrix_res.matrix.swap(canvas));
         }
     }
     
     #[cfg(not(all(target_os = "linux", feature = "matrix")))]
     {
         // Debug output for non-matrix builds
-        static mut FRAME_COUNTER: u32 = 0;
-        unsafe {
-            FRAME_COUNTER += 1;
-            // Only log every 30 frames to avoid spam
-            if FRAME_COUNTER % 30 == 1 {
-                println!("Frame {} received ({} bytes)", FRAME_COUNTER, image_data.len());
+        if let Some(ref data) = new_frame {
+            static mut FRAME_COUNTER: u32 = 0;
+            unsafe {
+                FRAME_COUNTER += 1;
+                let is_valid = is_valid_frame(data);
+                if FRAME_COUNTER % 30 == 1 {
+                    println!("Frame {} received ({} bytes, valid: {})", FRAME_COUNTER, data.len(), is_valid);
+                }
             }
         }
     }

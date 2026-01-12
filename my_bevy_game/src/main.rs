@@ -33,7 +33,7 @@ use matrix_render::MatrixRenderPlugin;
 // Note: Window mode uses vsync (~60 FPS typically), headless uses fixed timestep
 // 30 FPS provides good balance between smoothness and Pi Zero 2 W performance
 #[cfg(not(feature = "window"))]
-const TARGET_FPS: u64 = 60;
+const TARGET_FPS: u64 = 1;
 #[cfg(not(feature = "window"))]
 const FRAME_TIME_MS: u64 = 1000 / TARGET_FPS;
 

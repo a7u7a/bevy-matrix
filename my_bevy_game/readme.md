@@ -22,6 +22,8 @@ Milestones:
 
 ## Pending
 
+- Add FPS diagnostics
+- Improve video documenting: Remove screen flickering when taking videos of the screen for documentation purposes
 - Add platform-specific controls demo (Basic camera orbit with mouse on mac, playstation controller on raspberry pi (details TBD))
 - Implement a bigger display size on mac (Keeping square aspect ratio for simplcity)
 - How would we switch to event-driven rendering on the Pi? (Instead of fixed timestep)

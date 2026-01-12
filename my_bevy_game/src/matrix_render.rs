@@ -9,7 +9,6 @@ use bevy::app::{App, Plugin, PostStartup, PostUpdate, Startup};
 use bevy::asset::{Assets, Handle};
 use bevy::camera::RenderTarget;
 use bevy::ecs::component::Component;
-use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::ecs::world::World;
 use bevy::image::Image;
@@ -34,12 +33,15 @@ use crate::scene_setup::{setup_3d_scene, RENDER_HEIGHT, RENDER_WIDTH};
 #[cfg(all(target_os = "linux", feature = "matrix"))]
 use rpi_led_matrix::{LedCanvas, LedMatrix, LedMatrixOptions};
 
-/// Resource to hold the LED matrix hardware
+/// Resource to hold the LED matrix hardware and offscreen canvas for double buffering
 /// This is created during startup and used to display rendered frames
 #[cfg(all(target_os = "linux", feature = "matrix"))]
 #[derive(Resource)]
 pub struct MatrixResource {
     pub matrix: LedMatrix,
+    /// Offscreen canvas for double buffering - we draw here, then swap atomically
+    /// Using Option allows us to take() ownership without creating a placeholder canvas
+    pub offscreen_canvas: Option<LedCanvas>,
     pub displayed_frame: Vec<u8>, // Track what's currently displayed
 }
 
@@ -109,14 +111,17 @@ fn initialize_matrix(mut commands: Commands) {
         let matrix = LedMatrix::new(Some(options), None)
             .expect("Failed to create LED matrix - check hardware connection and permissions");
         
-        // DON'T use offscreen canvas - draw directly to matrix to avoid flickering from swaps
-        // The matrix itself implements the Canvas trait, so we can draw directly on it
+        // Create offscreen canvas for double buffering
+        // This allows us to draw the entire frame invisibly, then swap atomically
+        let offscreen_canvas = matrix.offscreen_canvas();
+        println!("Created offscreen canvas for double buffering");
         
         commands.insert_resource(MatrixResource {
             matrix,
+            offscreen_canvas: Some(offscreen_canvas),  // Wrap in Option for take() pattern
             displayed_frame: Vec::new(), // Empty initially
         });
-        println!("LED matrix initialized successfully!");
+        println!("LED matrix initialized successfully with double buffering!");
     }
 
     #[cfg(not(all(target_os = "linux", feature = "matrix")))]
@@ -375,83 +380,72 @@ fn receive_and_display_frame(
     
     // Drain any additional queued frames and use ONLY the latest
     // This prevents displaying stale frames if rendering is faster than display
-    let mut frame_count = 1;
     while let Ok(newer_data) = receiver.try_recv() {
-        frame_count += 1;
         padded_image_data = newer_data;
     }
     
-    // Log frame backlog for debugging
-    if frame_count > 1 {
-        println!("Frame backlog: received {} frames, displaying latest", frame_count);
+    // Get the ImageCopier to know about row padding
+    let Ok(image_copier) = image_copiers.single() else {
+        eprintln!("ERROR: ImageCopier not found");
+        return;
+    };
+    
+    let width = RENDER_WIDTH as usize;
+    let height = RENDER_HEIGHT as usize;
+    let row_bytes = width * 4; // RGBA = 4 bytes per pixel
+    let aligned_row_bytes = image_copier.padded_bytes_per_row;
+    
+    // Debug output (only print once)
+    static mut DEBUG_PRINTED: bool = false;
+    unsafe {
+        if !DEBUG_PRINTED {
+            println!("DEBUG: Buffer size: {} bytes", padded_image_data.len());
+            println!("DEBUG: Expected unpadded: {} bytes ({}x{} RGBA)", width * height * 4, width, height);
+            println!("DEBUG: Row bytes: {}, Aligned row bytes: {}", row_bytes, aligned_row_bytes);
+            println!("DEBUG: Padding needed: {}", row_bytes != aligned_row_bytes);
+            println!("DEBUG: Using DOUBLE BUFFERING for flicker-free display");
+            DEBUG_PRINTED = true;
+        }
     }
-        // Get the ImageCopier to know about row padding
-        let Ok(image_copier) = image_copiers.single() else {
-            eprintln!("ERROR: ImageCopier not found");
-            return;
-        };
+    
+    // Unpad the buffer if necessary (GPU buffers are aligned to 256 bytes per row)
+    // This is CRITICAL - without this, the image appears shifted/glitchy!
+    let image_data: Vec<u8> = if row_bytes == aligned_row_bytes {
+        // No padding, use as-is
+        padded_image_data
+    } else {
+        // Remove padding from each row
+        // Each row in the buffer is aligned_row_bytes, but we only need row_bytes
+        padded_image_data
+            .chunks(aligned_row_bytes)
+            .take(height)
+            .flat_map(|row| &row[..row_bytes.min(row.len())])
+            .cloned()
+            .collect()
+    };
+    
+    #[cfg(all(target_os = "linux", feature = "matrix"))]
+    {
+        use rpi_led_matrix::LedColor;
         
-        let width = RENDER_WIDTH as usize;
-        let height = RENDER_HEIGHT as usize;
-        let row_bytes = width * 4; // RGBA = 4 bytes per pixel
-        let aligned_row_bytes = image_copier.padded_bytes_per_row;
-        
-        // Debug output (only print once)
-        static mut DEBUG_PRINTED: bool = false;
-        unsafe {
-            if !DEBUG_PRINTED {
-                println!("DEBUG: Buffer size: {} bytes", padded_image_data.len());
-                println!("DEBUG: Expected unpadded: {} bytes ({}x{} RGBA)", width * height * 4, width, height);
-                println!("DEBUG: Row bytes: {}, Aligned row bytes: {}", row_bytes, aligned_row_bytes);
-                println!("DEBUG: Padding needed: {}", row_bytes != aligned_row_bytes);
-                DEBUG_PRINTED = true;
-            }
+        let expected_size = width * height * 4; // RGBA
+        if image_data.len() != expected_size {
+            eprintln!("WARNING: Image data size mismatch! Expected {}, got {}", 
+                     expected_size, image_data.len());
         }
         
-        // Unpad the buffer if necessary (GPU buffers are aligned to 256 bytes per row)
-        // This is CRITICAL - without this, the image appears shifted/glitchy!
-        let image_data: Vec<u8> = if row_bytes == aligned_row_bytes {
-            // No padding, use as-is
-            padded_image_data
-        } else {
-            // Remove padding from each row
-            // Each row in the buffer is aligned_row_bytes, but we only need row_bytes
-            padded_image_data
-                .chunks(aligned_row_bytes)
-                .take(height)
-                .flat_map(|row| &row[..row_bytes.min(row.len())])
-                .cloned()
-                .collect()
-        };
+        // Only update if frame changed
+        let frame_changed = matrix_res.displayed_frame != image_data;
         
-        #[cfg(all(target_os = "linux", feature = "matrix"))]
-        {
-            use rpi_led_matrix::LedColor;
+        if frame_changed {
+            // DOUBLE BUFFERING: Draw to offscreen canvas, then swap atomically
+            // This prevents flickering by ensuring only complete frames are displayed
             
-            // Debug: Log if we're getting frame backlog
-            if frame_count > 1 {
-                println!("Frame backlog: received {} frames, displaying latest", frame_count);
-            }
-            
-            // Draw directly to the matrix (no offscreen canvas, no swap)
-            // This should eliminate the "black flash" from swapping buffers
-            
-            let expected_size = width * height * 4; // RGBA
-            if image_data.len() != expected_size {
-                eprintln!("WARNING: Image data size mismatch! Expected {}, got {}", 
-                         expected_size, image_data.len());
-            }
-            
-            // Only update if frame changed
-            let frame_changed = matrix_res.displayed_frame != image_data;
-            
-            if frame_changed {
-                println!("Frame changed, updating display (direct draw, no swap)...");
-                
-                // Get the display canvas (not offscreen)
-                let mut canvas = matrix_res.matrix.canvas();
-                
-                // Draw every pixel directly to the displayed canvas
+            // Take the canvas out of Option (no new canvas created!)
+            // This is the KEY FIX: we must NOT call offscreen_canvas() every frame
+            // as that creates new buffers and corrupts the matrix library state
+            if let Some(mut canvas) = matrix_res.offscreen_canvas.take() {
+                // Draw every pixel to the OFFSCREEN canvas (invisible to user)
                 for y in 0..height {
                     for x in 0..width {
                         let pixel_idx = (y * width + x) * 4;
@@ -462,24 +456,32 @@ fn receive_and_display_frame(
                             let b = image_data[pixel_idx + 2];
                             
                             let color = LedColor { red: r, green: g, blue: b };
-                            // Draw directly to the visible canvas - no swap needed!
                             canvas.set(x as i32, y as i32, &color);
                         }
                     }
                 }
                 
-                matrix_res.displayed_frame = image_data;
+                // ATOMIC SWAP on VSync: instantly swap offscreen↔visible
+                // swap() returns what was displayed (now becomes our new offscreen)
+                // This matches the C demo pattern: create once, swap forever
+                matrix_res.offscreen_canvas = Some(matrix_res.matrix.swap(canvas));
+            }
+            
+            matrix_res.displayed_frame = image_data;
+        }
+    }
+    
+    #[cfg(not(all(target_os = "linux", feature = "matrix")))]
+    {
+        // Debug output for non-matrix builds
+        static mut FRAME_COUNTER: u32 = 0;
+        unsafe {
+            FRAME_COUNTER += 1;
+            // Only log every 30 frames to avoid spam
+            if FRAME_COUNTER % 30 == 1 {
+                println!("Frame {} received ({} bytes)", FRAME_COUNTER, image_data.len());
             }
         }
-        
-        #[cfg(not(all(target_os = "linux", feature = "matrix")))]
-        {
-            if frame_count > 1 {
-                println!("Frame backlog: received {} frames, displaying latest ({} bytes → {} bytes after unpadding)", 
-                         frame_count, padded_image_data.len(), image_data.len());
-            } else {
-                println!("Matrix not available - received {} bytes of frame data", image_data.len());
-            }
-        }
+    }
 }
 

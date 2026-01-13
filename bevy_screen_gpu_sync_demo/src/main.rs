@@ -24,7 +24,7 @@ use gpu_render::GpuRenderPlugin;
 
 // Target frame rate for headless mode
 #[cfg(not(feature = "window"))]
-const TARGET_FPS: u64 = 1;
+const TARGET_FPS: u64 = 60;
 #[cfg(not(feature = "window"))]
 const FRAME_TIME_MS: u64 = 1000 / TARGET_FPS;
 

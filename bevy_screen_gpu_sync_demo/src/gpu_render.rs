@@ -3,15 +3,17 @@
 
 use bevy::app::{App, Plugin, PostStartup, PostUpdate, Update};
 use bevy::asset::{Assets, Handle};
-use bevy::ecs::system::{Commands, Query, Res, ResMut};
-use bevy::ecs::world::World;
+use bevy::camera::RenderTarget;
 use bevy::ecs::component::Component;
 use bevy::ecs::schedule::IntoScheduleConfigs;
+use bevy::ecs::system::{Commands, Query, Res, ResMut};
+use bevy::ecs::world::World;
 use bevy::image::Image;
-use bevy::prelude::{Camera2d, Camera, Deref, DerefMut, Resource};
-use bevy::camera::RenderTarget;
+use bevy::prelude::{Camera, Camera2d, Deref, DerefMut, Resource};
 use bevy::render::render_asset::RenderAssets;
-use bevy::render::render_graph::{self, NodeRunError, RenderGraph, RenderGraphContext, RenderLabel};
+use bevy::render::render_graph::{
+    self, NodeRunError, RenderGraph, RenderGraphContext, RenderLabel,
+};
 use bevy::render::render_resource::{
     Buffer, BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, MapMode,
     TexelCopyBufferInfo, TexelCopyBufferLayout, TextureFormat, TextureUsages,
@@ -73,9 +75,15 @@ struct RenderTargetHandle(Handle<Image>);
 impl Plugin for GpuRenderPlugin {
     fn build(&self, app: &mut App) {
         // Initialize frame buffer
-        app.insert_resource(FrameBuffer::new(RENDER_WIDTH as usize, RENDER_HEIGHT as usize));
-        
-        app.add_systems(PostStartup, (initialize_matrix, setup_render_target).chain());
+        app.insert_resource(FrameBuffer::new(
+            RENDER_WIDTH as usize,
+            RENDER_HEIGHT as usize,
+        ));
+
+        app.add_systems(
+            PostStartup,
+            (initialize_matrix, setup_render_target).chain(),
+        );
         app.add_systems(Update, draw_test_pattern);
         app.add_plugins(ImageCopyPlugin);
         app.add_systems(PostUpdate, receive_and_display_frame);
@@ -87,18 +95,19 @@ fn initialize_matrix(mut commands: Commands) {
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     {
         println!("Initializing LED matrix...");
-        
+
         let mut options = LedMatrixOptions::new();
         options.set_rows(64);
         options.set_cols(64);
         options.set_hardware_mapping("adafruit-hat-pwm");
         options.set_refresh_rate(true);
-        
-        let matrix = LedMatrix::new(Some(options), None)
-            .expect("Failed to create LED matrix");
-        
+        options.set_pwm_lsb_nanoseconds(130);
+        options.set_brightness(50);
+
+        let matrix = LedMatrix::new(Some(options), None).expect("Failed to create LED matrix");
+
         let offscreen_canvas = matrix.offscreen_canvas();
-        
+
         commands.insert_resource(MatrixResource {
             matrix,
             offscreen_canvas: Some(offscreen_canvas),
@@ -119,7 +128,7 @@ fn setup_render_target(
     render_device: Res<RenderDevice>,
 ) {
     println!("Setting up 64x64 GPU render target...");
-    
+
     let size = Extent3d {
         width: RENDER_WIDTH,
         height: RENDER_HEIGHT,
@@ -145,12 +154,8 @@ fn setup_render_target(
     ));
 
     // Spawn the ImageCopier
-    commands.spawn(ImageCopier::new(
-        render_target_handle,
-        size,
-        &render_device,
-    ));
-    
+    commands.spawn(ImageCopier::new(render_target_handle, size, &render_device));
+
     println!("GPU render target initialized - will draw animated red square");
 }
 
@@ -164,37 +169,40 @@ fn draw_test_pattern(
     let Some(render_target) = render_target else {
         return;
     };
-    
+
     let Some(image) = images.get_mut(&render_target.0) else {
         return;
     };
-    
+
     let Some(ref mut data) = image.data else {
         return;
     };
-    
+
     let width = RENDER_WIDTH as usize;
     let height = RENDER_HEIGHT as usize;
     let square_size = 16;
-    
+
     // Animate square position - moves diagonally, wrapping around
     let elapsed = time.elapsed_secs();
     let offset = ((elapsed * 20.0) as i32) % (width as i32 - square_size as i32);
     let start_x = offset as usize;
     let start_y = offset as usize;
-    
+
     // Clear to black, draw red square at animated position
     for y in 0..height {
         for x in 0..width {
             let idx = (y * width + x) * 4;
-            
+
             if idx + 3 < data.len() {
-                if x >= start_x && x < start_x + square_size &&
-                   y >= start_y && y < start_y + square_size {
+                if x >= start_x
+                    && x < start_x + square_size
+                    && y >= start_y
+                    && y < start_y + square_size
+                {
                     // Red square
-                    data[idx] = 255;     // R
-                    data[idx + 1] = 0;   // G
-                    data[idx + 2] = 0;   // B
+                    data[idx] = 255; // R
+                    data[idx + 1] = 0; // G
+                    data[idx + 2] = 0; // B
                     data[idx + 3] = 255; // A
                 } else {
                     // Black background
@@ -348,7 +356,7 @@ fn receive_image_from_buffer(
     let Some(image_copiers) = image_copiers else {
         return;
     };
-    
+
     for image_copier in image_copiers.0.iter() {
         if !image_copier.enabled() {
             continue;
@@ -380,33 +388,32 @@ fn receive_and_display_frame(
     receiver: Res<MainWorldReceiver>,
     image_copiers: Query<&ImageCopier>,
     mut frame_buffer: ResMut<FrameBuffer>,
-    #[cfg(all(target_os = "linux", feature = "matrix"))]
-    mut matrix_res: ResMut<MatrixResource>,
+    #[cfg(all(target_os = "linux", feature = "matrix"))] mut matrix_res: ResMut<MatrixResource>,
 ) {
     static mut FRAME_COUNT: u32 = 0;
-    
+
     let Ok(mut padded_image_data) = receiver.try_recv() else {
         return;
     };
-    
+
     unsafe {
         FRAME_COUNT += 1;
     }
-    
+
     // Get latest frame if multiple are queued
     while let Ok(newer_data) = receiver.try_recv() {
         padded_image_data = newer_data;
     }
-    
+
     let Ok(image_copier) = image_copiers.single() else {
         return;
     };
-    
+
     let width = RENDER_WIDTH as usize;
     let height = RENDER_HEIGHT as usize;
     let row_bytes = width * 4;
     let aligned_row_bytes = image_copier.padded_bytes_per_row;
-    
+
     // Unpad if necessary
     let image_data: Vec<u8> = if row_bytes == aligned_row_bytes {
         padded_image_data
@@ -418,58 +425,69 @@ fn receive_and_display_frame(
             .cloned()
             .collect()
     };
-    
+
     // PHASE 1: Fast copy to pre-buffer (instant memcpy ~1µs)
     let copy_start = std::time::Instant::now();
     frame_buffer.data.copy_from_slice(&image_data);
     let copy_duration = copy_start.elapsed();
-    
+
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     {
         use rpi_led_matrix::LedColor;
-        
+
         if let Some(mut canvas) = matrix_res.offscreen_canvas.take() {
             // PHASE 2: Draw from stable buffer to canvas
             let draw_start = std::time::Instant::now();
-            
+
             for y in 0..height {
                 for x in 0..width {
                     let pixel_idx = (y * width + x) * 4;
-                    
+
                     if pixel_idx + 3 <= frame_buffer.data.len() {
                         let r = frame_buffer.data[pixel_idx];
                         let g = frame_buffer.data[pixel_idx + 1];
                         let b = frame_buffer.data[pixel_idx + 2];
-                        
-                        let color = LedColor { red: r, green: g, blue: b };
+
+                        let color = LedColor {
+                            red: r,
+                            green: g,
+                            blue: b,
+                        };
                         canvas.set(x as i32, y as i32, &color);
                     }
                 }
             }
-            
+
             let draw_duration = draw_start.elapsed();
-            
+
             // Swap canvas
             matrix_res.offscreen_canvas = Some(matrix_res.matrix.swap(canvas));
-            
+
             unsafe {
                 if FRAME_COUNT <= 10 || FRAME_COUNT % 60 == 0 {
-                    println!("FRAME {}: copy={:?}, draw={:?}, total={:?}", 
-                             FRAME_COUNT, copy_duration, draw_duration, 
-                             copy_duration + draw_duration);
+                    println!(
+                        "FRAME {}: copy={:?}, draw={:?}, total={:?}",
+                        FRAME_COUNT,
+                        copy_duration,
+                        draw_duration,
+                        copy_duration + draw_duration
+                    );
                 }
             }
         }
     }
-    
+
     #[cfg(not(all(target_os = "linux", feature = "matrix")))]
     {
         unsafe {
             if FRAME_COUNT <= 10 || FRAME_COUNT % 60 == 0 {
-                println!("FRAME {}: copy={:?} ({} bytes)", 
-                         FRAME_COUNT, copy_duration, image_data.len());
+                println!(
+                    "FRAME {}: copy={:?} ({} bytes)",
+                    FRAME_COUNT,
+                    copy_duration,
+                    image_data.len()
+                );
             }
         }
     }
 }
-

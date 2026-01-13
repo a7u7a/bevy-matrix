@@ -27,3 +27,7 @@ The flicker in Test 3 was caused by the matrix refresh thread seeing intermediat
 sudo ./bevy_screen_gpu_sync_demo
 ```
 
+## Results
+
+- Success! No flicker! The square animates smoothly and there is no jitter or flicker on the screen, all pixels looks solid in color.
+- The stable buffer approach solved the issue, also added these display configurations to make it run extra smooth and it also solved glitches visible while recording iphone videos of the screen running.

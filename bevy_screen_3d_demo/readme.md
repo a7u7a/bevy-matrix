@@ -28,4 +28,6 @@ Based on Test 4's working foundation:
 ```bash
 sudo ./bevy_screen_3d_demo
 ```
+## Results
 
+- No flicker! The cube rotates smoothly and the colors look solid. No blinking.

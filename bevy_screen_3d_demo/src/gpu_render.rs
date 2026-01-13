@@ -181,7 +181,7 @@ fn setup_3d_scene(
 
     // Red cube at origin with rotation marker
     commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+        Mesh3d(meshes.add(Cuboid::new(4.0, 4.0, 4.0))),
         MeshMaterial3d(materials.add(Color::srgb(1.0, 0.0, 0.0))), // Pure red
         Transform::from_xyz(0.0, 0.0, 0.0),
         RotatingCube, // Marker component for rotation system

@@ -1,33 +1,142 @@
-# Test 5: GPU Rendering with 3D Scene (Rotating Cube)
+# Bevy + RGB Matrix Integration
 
-## Goal
-Test if full 3D scene rendering causes flicker by adding 3D complexity to the proven working GPU pipeline from Test 4.
+(WIP)
 
-## Hypothesis
-Something about 3D rendering (PBR pipeline, lighting, mesh complexity) might cause the flicker observed in `my_bevy_game`.
+## Current Status
 
-## Implementation
-Based on Test 4's working foundation:
-- ✅ FrameBuffer pre-buffer strategy
-- ✅ `set_brightness(50)`
-- ✅ Always swap every frame (no frame_changed check)
-- ✅ Double buffering pattern
-- **NEW**: Full 3D scene with rotating red cube
-- **NEW**: Camera3d with PBR lighting
+This is a minimal Bevy app demonstrating platform-specific plugin configuration:
 
-## Expected Results
-- **No flicker**: 3D rendering works fine with FrameBuffer → Root cause is frame_changed check
-- **Flickers**: 3D rendering itself causes issues → Need to investigate PBR/lighting complexity
+- **Mac**: Runs with window and rendering (`DefaultPlugins`)
+- **Pi**: Runs headless with minimal plugins (`ScheduleRunnerPlugin` + `TimePlugin`)
+- **Shared logic**: Basic ECS demo (entities, components, systems, timers)
 
-## Build and Deploy
+## Roadmap
+
+Milestones:
+
+- [x] Implement base bevy project with cross-compiling. Runs in mac and in the pi
+- [x] Add `rpi-rgb-led-matrix` library rust bindings, minimal working demo writing something to the screen using bevy in rust. Must run and compile in both targets but no output is expected in window mode.
+- [x] Add basic render output. Create a minimal bevy setup that renders a cube in the a window (mac only)
+- [x] Make the above scene compile on both targets
+- [x] Add Bevy rendering to headless pi, minimal working demo that renders the scene from the previous milestone to the led matrix. Once access to the rendered bevy camera output buffer is confirmed we will try to write the frame to the matrix screen using the rpi-rgb-led-matrix rust bindings
+
+## Pending
+
+- Try a rendering approach that draws directly to the screen canvas instead of using double buffering swap stuff
+- Add FPS diagnostics
+- Improve video documenting: Remove screen flickering when taking videos of the screen for documentation purposes
+- Add platform-specific controls demo (Basic camera orbit with mouse on mac, playstation controller on raspberry pi (details TBD))
+- How would we switch to event-driven rendering on the Pi? (Instead of fixed timestep)
+- Implement tooling to help speed up cross-compile development and testing
+- Document GPU driver installation on the Pi
+- Test dev profiles on the Pi
+
+## Running on Mac
+
+```bash
+cargo run --features window
+# or just:
+cargo run
+```
+
+Opens a window and prints hello messages every 2 seconds.
+
+**Test headless mode locally** (simulates Pi environment):
+
+```bash
+cargo run --no-default-features --features matrix
+```
+
+**Development profiles:**
+
+```bash
+# Standard dev build (optimized for iteration speed)
+# - Your code: opt-level 1 (fast compile, decent runtime)
+# - Dependencies: opt-level 3 (slow first compile, fast runtime)
+cargo run
+
+# Ultra-fast compilation for quick syntax checks
+# - Everything: opt-level 0 (fastest compile, slowest runtime)
+cargo build --profile dev-fast --features window
+
+# Release build (maximum optimization)
+cargo build --release
+```
+
+The dev profile balances compile time and runtime performance. First compile is slow (dependencies), but subsequent builds are fast since dependencies are cached.
+
+## Deploying to Raspberry Pi
+
+### Cross compiling setup
+
+**On the Mac:**
+
+1. Add the ARM64 Linux target:
+
+```bash
+rustup target add aarch64-unknown-linux-gnu
+```
+
+Install a cross-linker (via Homebrew):
+
+```bash
+brew install messense/macos-cross-toolchains/aarch64-unknown-linux-gnu
+```
+
+2. Cross-compile the matrix library:
+
+```bash
+git clone https://github.com/hzeller/rpi-rgb-led-matrix.git
+cd rpi-rgb-led-matrix
+```
+
+Then, build using the cross-compiler:
+
+```bash
+make -C lib \
+  CC=aarch64-unknown-linux-gnu-gcc \
+  CXX=aarch64-unknown-linux-gnu-g++ \
+  AR=aarch64-unknown-linux-gnu-ar
+```
+
+Create a directory for cross-compile libraries and copy:
+
+```bash
+mkdir -p ~/cross-libs/aarch64-linux-gnu
+cp lib/librgbmatrix.a ~/cross-libs/aarch64-linux-gnu/
+```
+
+Now we have a basic cross compiling setup for the game.
+
+### Cross-compile the game for Pi
+
+On Mac:
+
 ```bash
 ./deploy.sh
 ```
 
-## Run on Pi
-```bash
-sudo ./bevy_screen_3d_demo
-```
-## Results
+Run on Pi:
 
-- No flicker! The cube rotates smoothly and the colors look solid. No blinking.
+```bash
+sudo ./my_bevy_game
+```
+
+## Troubleshooting
+
+### Error: "Pi sound module is loaded"
+
+```bash
+# Edit the config file
+sudo nano /boot/firmware/config.txt
+
+# Add this line at the end:
+dtparam=audio=off
+
+# Also blacklist the module
+echo "blacklist snd_bcm2835" | sudo tee /etc/modprobe.d/blacklist-rgb-matrix.conf
+
+# Reboot
+sudo reboot
+```
+

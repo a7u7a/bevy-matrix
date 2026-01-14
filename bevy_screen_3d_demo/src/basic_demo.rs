@@ -61,4 +61,3 @@ fn greet_people(time: Res<Time>, mut timer: ResMut<GreetTimer>, query: Query<&Na
         }
     }
 }
-

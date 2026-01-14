@@ -1,7 +1,7 @@
 // Test 5: GPU rendering with 3D scene (rotating cube)
 // Adds full 3D rendering to Test 4's proven working pipeline
 
-use bevy::app::{App, Plugin, PostStartup, PostUpdate, Update};
+use bevy::app::{App, Plugin, PostStartup, PostUpdate, Startup, Update};
 use bevy::asset::{Assets, Handle};
 use bevy::camera::RenderTarget;
 use bevy::color::Color;
@@ -13,7 +13,10 @@ use bevy::ecs::world::World;
 use bevy::image::Image;
 use bevy::math::Vec3;
 use bevy::pbr::StandardMaterial;
-use bevy::prelude::{Camera, Camera3d, Cuboid, Deref, DerefMut, Mesh, Mesh3d, MeshMaterial3d, PointLight, Resource, Transform};
+use bevy::prelude::{
+    Camera, Camera3d, ClearColorConfig, Cuboid, Deref, DerefMut, Mesh, Mesh3d, MeshMaterial3d,
+    PointLight, Resource, Transform,
+};
 use bevy::render::render_asset::RenderAssets;
 use bevy::render::render_graph::{
     self, NodeRunError, RenderGraph, RenderGraphContext, RenderLabel,
@@ -88,14 +91,20 @@ impl Plugin for GpuRenderPlugin {
             RENDER_HEIGHT as usize,
         ));
 
+        // Startup: Create the 3D scene (camera, cube, light)
+        // This runs FIRST so camera exists for render target configuration
+        app.add_systems(Startup, setup_3d_scene);
+
+        // PostStartup: Configure render target and matrix
+        // This runs AFTER Startup, so the camera exists to be queried
         app.add_systems(
             PostStartup,
-            (initialize_matrix, setup_render_target, setup_3d_scene).chain(),
+            (initialize_matrix, setup_render_target).chain(),
         );
-        
+
         // Add rotation system that runs every frame
         app.add_systems(Update, rotate_cube);
-        
+
         app.add_plugins(ImageCopyPlugin);
         app.add_systems(PostUpdate, receive_and_display_frame);
     }
@@ -112,8 +121,24 @@ fn initialize_matrix(mut commands: Commands) {
         options.set_cols(64);
         options.set_hardware_mapping("adafruit-hat-pwm");
         options.set_refresh_rate(true);
-        options.set_pwm_lsb_nanoseconds(130);
-        options.set_brightness(50);
+
+        // === DISPLAY QUALITY SETTINGS ===
+        // Increase PWM LSB nanoseconds for cleaner pulses (reduces white streaks)
+        // Default is 130, try 200-500 for better quality at cost of brightness
+        options.set_pwm_lsb_nanoseconds(200);
+
+        // Reduce PWM bits for faster refresh (reduces streaking artifacts)
+        // Default is 11, try 7-9 for smoother display at cost of color depth
+        options.set_pwm_bits(9);
+
+        // GPIO slowdown - important for Pi Zero 2 W (faster than original Pi)
+        // Try 2-4 if you see artifacts
+        // Note: This may not be available in the Rust bindings
+
+        // Brightness - lower values reduce artifacts
+        options.set_brightness(40);
+
+        println!("Matrix options: pwm_lsb_ns=300, pwm_bits=9, brightness=40");
 
         let matrix = LedMatrix::new(Some(options), None).expect("Failed to create LED matrix");
 
@@ -132,13 +157,15 @@ fn initialize_matrix(mut commands: Commands) {
     }
 }
 
-/// Setup render target and 3D camera
+/// Setup render target and configure the existing camera to render to it
+/// (Camera is spawned in setup_3d_scene first, then we modify its target here)
 fn setup_render_target(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     render_device: Res<RenderDevice>,
+    mut camera_query: Query<&mut Camera, With<Camera3d>>,
 ) {
-    println!("Setting up 64x64 GPU render target with 3D camera...");
+    println!("Setting up 64x64 GPU render target...");
 
     let size = Extent3d {
         width: RENDER_WIDTH,
@@ -147,56 +174,91 @@ fn setup_render_target(
     };
 
     // Create offscreen render target
+    // Step 4: Set to true to use Rgba8Unorm (linear) instead of Rgba8UnormSrgb (gamma-encoded)
+    const DEBUG_USE_LINEAR_FORMAT: bool = false;
+    let texture_format = if DEBUG_USE_LINEAR_FORMAT {
+        TextureFormat::Rgba8Unorm
+    } else {
+        TextureFormat::Rgba8UnormSrgb
+    };
+    println!("Using texture format: {:?}", texture_format);
+
     let mut render_target_image =
-        Image::new_target_texture(size.width, size.height, TextureFormat::Rgba8UnormSrgb);
+        Image::new_target_texture(size.width, size.height, texture_format);
     render_target_image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
     let render_target_handle = images.add(render_target_image);
 
     // Store handle
     commands.insert_resource(RenderTargetHandle(render_target_handle.clone()));
 
-    // Spawn a 3D camera rendering to our texture
-    commands.spawn((
-        Camera3d::default(),
-        Camera {
-            target: RenderTarget::Image(render_target_handle.clone().into()),
-            ..Default::default()
-        },
-        Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
+    // Configure the existing camera to render to our texture
+    // (matching my_bevy_game's approach - camera spawned first, then target assigned)
+    match camera_query.single_mut() {
+        Ok(mut camera) => {
+            camera.target = RenderTarget::Image(render_target_handle.clone().into());
+            camera.clear_color = ClearColorConfig::Custom(Color::BLACK);
+            println!("Camera configured to render to offscreen texture");
+        }
+        Err(e) => {
+            eprintln!(
+                "ERROR: Failed to find camera for render target configuration: {:?}",
+                e
+            );
+        }
+    }
 
     // Spawn the ImageCopier
     commands.spawn(ImageCopier::new(render_target_handle, size, &render_device));
 
-    println!("GPU render target initialized - 3D camera ready");
+    println!("GPU render target initialized");
 }
 
-/// Setup 3D scene with rotating red cube and lighting
+/// Setup 3D scene with rotating red cube, lighting, and camera
+/// Camera is spawned here first (like my_bevy_game), then render target assigned later
 fn setup_3d_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    println!("Setting up 3D scene: red cube + point light...");
+    println!("Setting up 3D scene: red cube + point light + camera...");
 
     // Red cube at origin with rotation marker
+    // DEBUG: Try different material approaches to diagnose magenta issue
+    // Magenta (255,0,255) is often an "error" color when material fails to load
+    let material = StandardMaterial {
+        base_color: Color::srgb(1.0, 0.0, 0.0), // Red
+        // Try WITHOUT unlit - use normal PBR lighting
+        // unlit: true,
+        ..Default::default()
+    };
+    println!("Material base_color: {:?}", material.base_color);
+
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(4.0, 4.0, 4.0))),
-        MeshMaterial3d(materials.add(Color::srgb(1.0, 0.0, 0.0))), // Pure red
+        MeshMaterial3d(materials.add(material)),
         Transform::from_xyz(0.0, 0.0, 0.0),
         RotatingCube, // Marker component for rotation system
     ));
 
-    // Point light positioned above and to the side
+    // White point light positioned above and to the side for illumination
     commands.spawn((
         PointLight {
             intensity: 1500.0,
+            color: Color::WHITE,
             ..Default::default()
         },
         Transform::from_xyz(4.0, 8.0, 4.0),
     ));
 
-    println!("3D scene initialized!");
+    // Camera - spawned here first WITHOUT render target
+    // The render target will be configured in setup_render_target (PostStartup)
+    // This matches my_bevy_game's approach which works correctly
+    commands.spawn((
+        Camera3d::default(),
+        Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
+
+    println!("3D scene initialized (camera will be configured for render target later)");
 }
 
 /// Rotate the cube at 90 degrees per second on Y axis
@@ -422,9 +484,43 @@ fn receive_and_display_frame(
     frame_buffer.data.copy_from_slice(&image_data);
     let copy_duration = copy_start.elapsed();
 
+    // DEBUG: Print center pixel RGB values to diagnose color issues
+    unsafe {
+        if FRAME_COUNT <= 10 || FRAME_COUNT % 60 == 0 {
+            let center_idx = (32 * 64 + 32) * 4; // Center pixel (32,32)
+            println!(
+                "CENTER PIXEL: R={}, G={}, B={}, A={}",
+                frame_buffer.data[center_idx],
+                frame_buffer.data[center_idx + 1],
+                frame_buffer.data[center_idx + 2],
+                frame_buffer.data[center_idx + 3]
+            );
+        }
+    }
+
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     {
         use rpi_led_matrix::LedColor;
+
+        // ===== DEBUG FLAGS =====
+        // Step 2: Set to true to bypass GPU and test direct red write
+        const DEBUG_DIRECT_RED: bool = false;
+        // Step 3: Set to true to swap R and B channels (RGBA -> BGRA)
+        const DEBUG_SWAP_RB: bool = false;
+        // =======================
+
+        if DEBUG_DIRECT_RED {
+            // Override frame_buffer with solid red to test matrix display
+            for y in 0..height {
+                for x in 0..width {
+                    let idx = (y * width + x) * 4;
+                    frame_buffer.data[idx] = 255; // R
+                    frame_buffer.data[idx + 1] = 0; // G
+                    frame_buffer.data[idx + 2] = 0; // B
+                    frame_buffer.data[idx + 3] = 255; // A
+                }
+            }
+        }
 
         if let Some(mut canvas) = matrix_res.offscreen_canvas.take() {
             // PHASE 2: Draw from stable buffer to canvas
@@ -435,9 +531,22 @@ fn receive_and_display_frame(
                     let pixel_idx = (y * width + x) * 4;
 
                     if pixel_idx + 3 <= frame_buffer.data.len() {
-                        let r = frame_buffer.data[pixel_idx];
-                        let g = frame_buffer.data[pixel_idx + 1];
-                        let b = frame_buffer.data[pixel_idx + 2];
+                        // Read channels (optionally swapped)
+                        let (r, g, b) = if DEBUG_SWAP_RB {
+                            // Swap R and B: read as BGRA instead of RGBA
+                            (
+                                frame_buffer.data[pixel_idx + 2], // B->R
+                                frame_buffer.data[pixel_idx + 1], // G stays
+                                frame_buffer.data[pixel_idx],     // R->B
+                            )
+                        } else {
+                            // Normal RGBA
+                            (
+                                frame_buffer.data[pixel_idx],
+                                frame_buffer.data[pixel_idx + 1],
+                                frame_buffer.data[pixel_idx + 2],
+                            )
+                        };
 
                         let color = LedColor {
                             red: r,
@@ -482,4 +591,3 @@ fn receive_and_display_frame(
         }
     }
 }
-

@@ -40,18 +40,18 @@ fn main() {
 
     #[cfg(not(feature = "window"))]
     {
-        println!("Running in headless mode with 3D GPU rendering (fixed timestep: {}ms)", FRAME_TIME_MS);
+        println!(
+            "Running in headless mode with 3D GPU rendering (fixed timestep: {}ms)",
+            FRAME_TIME_MS
+        );
         println!("TEST 5: 3D rotating cube with pre-buffer strategy");
-        
+
         // Using DefaultPlugins (proven to work in Test 2)
-        app.add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: None,
-                    exit_condition: ExitCondition::DontExit,
-                    ..Default::default()
-                })
-        )
+        app.add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: None,
+            exit_condition: ExitCondition::DontExit,
+            ..Default::default()
+        }))
         .add_plugins(ScheduleRunnerPlugin {
             run_mode: bevy::app::RunMode::Loop {
                 wait: Some(Duration::from_millis(FRAME_TIME_MS)),
@@ -66,4 +66,3 @@ fn main() {
 
     app.run();
 }
-

@@ -21,6 +21,7 @@ window = [
     "bevy/bevy_winit",
     "bevy/bevy_render",
     "bevy/bevy_pbr",
+    "bevy/tonemapping_luts",  # Required for proper PBR color rendering
     "bevy/x11",
     "bevy/png",
 ]

@@ -29,20 +29,6 @@ use std::sync::{
 
 use crate::scene_setup::{RENDER_HEIGHT, RENDER_WIDTH};
 
-// ============================================================================
-// Debug Configuration
-// ============================================================================
-mod debug {
-    /// Bypass GPU and fill frame buffer with solid red (for testing matrix display)
-    pub const DIRECT_RED_TEST: bool = false;
-    /// Swap R and B channels (RGBA -> BGRA) to test color format
-    pub const SWAP_RB_CHANNELS: bool = false;
-    /// Log center pixel RGB values
-    pub const LOG_CENTER_PIXEL: bool = false;
-    /// Use linear color format (Rgba8Unorm) instead of sRGB (Rgba8UnormSrgb)
-    pub const USE_LINEAR_FORMAT: bool = false;
-}
-
 /// Frame counter for logging (using atomic to avoid static mut warnings)
 static FRAME_COUNT: AtomicU32 = AtomicU32::new(0);
 
@@ -78,7 +64,9 @@ struct FrameBuffer {
 impl FrameBuffer {
     fn new() -> Self {
         let size = RENDER_WIDTH as usize * RENDER_HEIGHT as usize * 4; // RGBA
-        Self { data: vec![0u8; size] }
+        Self {
+            data: vec![0u8; size],
+        }
     }
 }
 
@@ -165,11 +153,7 @@ fn setup_render_target(
     };
 
     // Create offscreen render target
-    let texture_format = if debug::USE_LINEAR_FORMAT {
-        TextureFormat::Rgba8Unorm
-    } else {
-        TextureFormat::Rgba8UnormSrgb
-    };
+    let texture_format = TextureFormat::Rgba8UnormSrgb;
 
     let mut render_target_image =
         Image::new_target_texture(size.width, size.height, texture_format);
@@ -191,7 +175,10 @@ fn setup_render_target(
 
     // Spawn the ImageCopier
     commands.spawn(ImageCopier::new(render_target_handle, size, &render_device));
-    println!("GPU render target initialized ({}x{})", RENDER_WIDTH, RENDER_HEIGHT);
+    println!(
+        "GPU render target initialized ({}x{})",
+        RENDER_WIDTH, RENDER_HEIGHT
+    );
 }
 
 // ============================================================================
@@ -411,31 +398,9 @@ fn receive_and_display_frame(
     // Copy to pre-buffer
     frame_buffer.data.copy_from_slice(&image_data);
 
-    // Debug: Log center pixel
-    if debug::LOG_CENTER_PIXEL && (frame_num < 10 || frame_num % 300 == 0) {
-        let center_idx = (32 * 64 + 32) * 4;
-        println!(
-            "Frame {}: center pixel RGB({}, {}, {})",
-            frame_num,
-            frame_buffer.data[center_idx],
-            frame_buffer.data[center_idx + 1],
-            frame_buffer.data[center_idx + 2]
-        );
-    }
-
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     {
         use rpi_led_matrix::LedColor;
-
-        if debug::DIRECT_RED_TEST {
-            // Override frame_buffer with solid red
-            for pixel in frame_buffer.data.chunks_mut(4) {
-                pixel[0] = 255; // R
-                pixel[1] = 0;   // G
-                pixel[2] = 0;   // B
-                pixel[3] = 255; // A
-            }
-        }
 
         if let Some(mut canvas) = matrix_res.offscreen_canvas.take() {
             for y in 0..height {
@@ -443,21 +408,21 @@ fn receive_and_display_frame(
                     let pixel_idx = (y * width + x) * 4;
 
                     if pixel_idx + 3 <= frame_buffer.data.len() {
-                        let (r, g, b) = if debug::SWAP_RB_CHANNELS {
-                            (
-                                frame_buffer.data[pixel_idx + 2],
-                                frame_buffer.data[pixel_idx + 1],
-                                frame_buffer.data[pixel_idx],
-                            )
-                        } else {
-                            (
-                                frame_buffer.data[pixel_idx],
-                                frame_buffer.data[pixel_idx + 1],
-                                frame_buffer.data[pixel_idx + 2],
-                            )
-                        };
+                        let (r, g, b) = (
+                            frame_buffer.data[pixel_idx],
+                            frame_buffer.data[pixel_idx + 1],
+                            frame_buffer.data[pixel_idx + 2],
+                        );
 
-                        canvas.set(x as i32, y as i32, &LedColor { red: r, green: g, blue: b });
+                        canvas.set(
+                            x as i32,
+                            y as i32,
+                            &LedColor {
+                                red: r,
+                                green: g,
+                                blue: b,
+                            },
+                        );
                     }
                 }
             }

@@ -1,22 +1,16 @@
-// Test 5: GPU rendering with 3D scene (rotating cube)
-// Adds full 3D rendering to Test 4's proven working pipeline
+// Matrix rendering module for headless mode (Raspberry Pi)
+// Handles GPU render target setup and LED matrix display
 
-use bevy::app::{App, Plugin, PostStartup, PostUpdate, Startup, Update};
+use bevy::app::{App, Plugin, PostStartup, PostUpdate};
 use bevy::asset::{Assets, Handle};
 use bevy::camera::RenderTarget;
 use bevy::color::Color;
-use bevy::ecs::component::Component;
 use bevy::ecs::query::With;
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::ecs::world::World;
 use bevy::image::Image;
-use bevy::math::Vec3;
-use bevy::pbr::StandardMaterial;
-use bevy::prelude::{
-    Camera, Camera3d, ClearColorConfig, Cuboid, Deref, DerefMut, Mesh, Mesh3d, MeshMaterial3d,
-    PointLight, Resource, Transform,
-};
+use bevy::prelude::{Camera, Camera3d, ClearColorConfig, Deref, DerefMut, Resource};
 use bevy::render::render_asset::RenderAssets;
 use bevy::render::render_graph::{
     self, NodeRunError, RenderGraph, RenderGraphContext, RenderLabel,
@@ -27,17 +21,34 @@ use bevy::render::render_resource::{
 };
 use bevy::render::renderer::{RenderContext, RenderDevice, RenderQueue};
 use bevy::render::{Extract, ExtractSchedule, Render, RenderApp};
-use bevy::time::Time;
 use crossbeam_channel::{Receiver, Sender};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU32, Ordering},
     Arc,
 };
 
-const RENDER_WIDTH: u32 = 64;
-const RENDER_HEIGHT: u32 = 64;
+use crate::scene_setup::{RENDER_HEIGHT, RENDER_WIDTH};
 
-// LED Matrix types
+// ============================================================================
+// Debug Configuration
+// ============================================================================
+mod debug {
+    /// Bypass GPU and fill frame buffer with solid red (for testing matrix display)
+    pub const DIRECT_RED_TEST: bool = false;
+    /// Swap R and B channels (RGBA -> BGRA) to test color format
+    pub const SWAP_RB_CHANNELS: bool = false;
+    /// Log center pixel RGB values
+    pub const LOG_CENTER_PIXEL: bool = false;
+    /// Use linear color format (Rgba8Unorm) instead of sRGB (Rgba8UnormSrgb)
+    pub const USE_LINEAR_FORMAT: bool = false;
+}
+
+/// Frame counter for logging (using atomic to avoid static mut warnings)
+static FRAME_COUNT: AtomicU32 = AtomicU32::new(0);
+
+// ============================================================================
+// LED Matrix Types
+// ============================================================================
 #[cfg(all(target_os = "linux", feature = "matrix"))]
 use rpi_led_matrix::{LedCanvas, LedMatrix, LedMatrixOptions};
 
@@ -53,68 +64,61 @@ unsafe impl Send for MatrixResource {}
 #[cfg(all(target_os = "linux", feature = "matrix"))]
 unsafe impl Sync for MatrixResource {}
 
+// ============================================================================
+// Frame Buffer
+// ============================================================================
+
 /// Pre-buffer to hold stable frame data
-/// This ensures all canvas drawing operations read from a consistent frame
+/// Ensures all canvas drawing operations read from a consistent frame
 #[derive(Resource)]
 struct FrameBuffer {
     data: Vec<u8>,
-    width: usize,
-    height: usize,
 }
 
 impl FrameBuffer {
-    fn new(width: usize, height: usize) -> Self {
-        Self {
-            data: vec![0u8; width * height * 4], // RGBA
-            width,
-            height,
-        }
+    fn new() -> Self {
+        let size = RENDER_WIDTH as usize * RENDER_HEIGHT as usize * 4; // RGBA
+        Self { data: vec![0u8; size] }
     }
 }
 
-/// Marker component for the rotating cube
-#[derive(Component)]
-struct RotatingCube;
-
-/// Main plugin for GPU rendering with 3D scene
-pub struct GpuRenderPlugin;
-
 /// Resource to track the render target image handle
 #[derive(Resource)]
+#[allow(dead_code)] // Handle is used via pattern matching in ImageCopier
 struct RenderTargetHandle(Handle<Image>);
 
-impl Plugin for GpuRenderPlugin {
-    fn build(&self, app: &mut App) {
-        // Initialize frame buffer
-        app.insert_resource(FrameBuffer::new(
-            RENDER_WIDTH as usize,
-            RENDER_HEIGHT as usize,
-        ));
+// ============================================================================
+// Plugin
+// ============================================================================
 
-        // Startup: Create the 3D scene (camera, cube, light)
-        // This runs FIRST so camera exists for render target configuration
-        app.add_systems(Startup, setup_3d_scene);
+/// Plugin for GPU rendering to LED matrix in headless mode
+pub struct MatrixRenderPlugin;
+
+impl Plugin for MatrixRenderPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(FrameBuffer::new());
 
         // PostStartup: Configure render target and matrix
-        // This runs AFTER Startup, so the camera exists to be queried
+        // Runs AFTER ScenePlugin's Startup, so the camera exists to be queried
         app.add_systems(
             PostStartup,
             (initialize_matrix, setup_render_target).chain(),
         );
-
-        // Add rotation system that runs every frame
-        app.add_systems(Update, rotate_cube);
 
         app.add_plugins(ImageCopyPlugin);
         app.add_systems(PostUpdate, receive_and_display_frame);
     }
 }
 
+// ============================================================================
+// Matrix Initialization
+// ============================================================================
+
 /// Initialize the LED matrix hardware
 fn initialize_matrix(mut commands: Commands) {
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     {
-        println!("Initializing LED matrix...");
+        println!("Initializing LED matrix (64x64)...");
 
         let mut options = LedMatrixOptions::new();
         options.set_rows(64);
@@ -122,51 +126,38 @@ fn initialize_matrix(mut commands: Commands) {
         options.set_hardware_mapping("adafruit-hat-pwm");
         options.set_refresh_rate(true);
 
-        // === DISPLAY QUALITY SETTINGS ===
-        // Increase PWM LSB nanoseconds for cleaner pulses (reduces white streaks)
-        // Default is 130, try 200-500 for better quality at cost of brightness
-        options.set_pwm_lsb_nanoseconds(200);
-
-        // Reduce PWM bits for faster refresh (reduces streaking artifacts)
-        // Default is 11, try 7-9 for smoother display at cost of color depth
-        options.set_pwm_bits(9);
-
-        // GPIO slowdown - important for Pi Zero 2 W (faster than original Pi)
-        // Try 2-4 if you see artifacts
-        // Note: This may not be available in the Rust bindings
-
-        // Brightness - lower values reduce artifacts
-        options.set_brightness(40);
-
-        println!("Matrix options: pwm_lsb_ns=300, pwm_bits=9, brightness=40");
+        // Display quality settings
+        let _ = options.set_pwm_lsb_nanoseconds(200);
+        let _ = options.set_pwm_bits(9);
+        let _ = options.set_brightness(40);
 
         let matrix = LedMatrix::new(Some(options), None).expect("Failed to create LED matrix");
-
         let offscreen_canvas = matrix.offscreen_canvas();
 
         commands.insert_resource(MatrixResource {
             matrix,
             offscreen_canvas: Some(offscreen_canvas),
         });
-        println!("LED matrix initialized!");
+        println!("LED matrix initialized");
     }
 
     #[cfg(not(all(target_os = "linux", feature = "matrix")))]
     {
-        println!("Matrix feature not enabled");
+        // No-op on non-matrix platforms
     }
 }
 
+// ============================================================================
+// Render Target Setup
+// ============================================================================
+
 /// Setup render target and configure the existing camera to render to it
-/// (Camera is spawned in setup_3d_scene first, then we modify its target here)
 fn setup_render_target(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     render_device: Res<RenderDevice>,
     mut camera_query: Query<&mut Camera, With<Camera3d>>,
 ) {
-    println!("Setting up 64x64 GPU render target...");
-
     let size = Extent3d {
         width: RENDER_WIDTH,
         height: RENDER_HEIGHT,
@@ -174,100 +165,38 @@ fn setup_render_target(
     };
 
     // Create offscreen render target
-    // Step 4: Set to true to use Rgba8Unorm (linear) instead of Rgba8UnormSrgb (gamma-encoded)
-    const DEBUG_USE_LINEAR_FORMAT: bool = false;
-    let texture_format = if DEBUG_USE_LINEAR_FORMAT {
+    let texture_format = if debug::USE_LINEAR_FORMAT {
         TextureFormat::Rgba8Unorm
     } else {
         TextureFormat::Rgba8UnormSrgb
     };
-    println!("Using texture format: {:?}", texture_format);
 
     let mut render_target_image =
         Image::new_target_texture(size.width, size.height, texture_format);
     render_target_image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
     let render_target_handle = images.add(render_target_image);
 
-    // Store handle
     commands.insert_resource(RenderTargetHandle(render_target_handle.clone()));
 
     // Configure the existing camera to render to our texture
-    // (matching my_bevy_game's approach - camera spawned first, then target assigned)
     match camera_query.single_mut() {
         Ok(mut camera) => {
             camera.target = RenderTarget::Image(render_target_handle.clone().into());
             camera.clear_color = ClearColorConfig::Custom(Color::BLACK);
-            println!("Camera configured to render to offscreen texture");
         }
         Err(e) => {
-            eprintln!(
-                "ERROR: Failed to find camera for render target configuration: {:?}",
-                e
-            );
+            eprintln!("ERROR: Failed to find camera for render target: {:?}", e);
         }
     }
 
     // Spawn the ImageCopier
     commands.spawn(ImageCopier::new(render_target_handle, size, &render_device));
-
-    println!("GPU render target initialized");
+    println!("GPU render target initialized ({}x{})", RENDER_WIDTH, RENDER_HEIGHT);
 }
 
-/// Setup 3D scene with rotating red cube, lighting, and camera
-/// Camera is spawned here first (like my_bevy_game), then render target assigned later
-fn setup_3d_scene(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    println!("Setting up 3D scene: red cube + point light + camera...");
-
-    // Red cube at origin with rotation marker
-    // DEBUG: Try different material approaches to diagnose magenta issue
-    // Magenta (255,0,255) is often an "error" color when material fails to load
-    let material = StandardMaterial {
-        base_color: Color::srgb(1.0, 0.0, 0.0), // Red
-        // Try WITHOUT unlit - use normal PBR lighting
-        // unlit: true,
-        ..Default::default()
-    };
-    println!("Material base_color: {:?}", material.base_color);
-
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(4.0, 4.0, 4.0))),
-        MeshMaterial3d(materials.add(material)),
-        Transform::from_xyz(0.0, 0.0, 0.0),
-        RotatingCube, // Marker component for rotation system
-    ));
-
-    // White point light positioned above and to the side for illumination
-    commands.spawn((
-        PointLight {
-            intensity: 1500.0,
-            color: Color::WHITE,
-            ..Default::default()
-        },
-        Transform::from_xyz(4.0, 8.0, 4.0),
-    ));
-
-    // Camera - spawned here first WITHOUT render target
-    // The render target will be configured in setup_render_target (PostStartup)
-    // This matches my_bevy_game's approach which works correctly
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
-
-    println!("3D scene initialized (camera will be configured for render target later)");
-}
-
-/// Rotate the cube at 90 degrees per second on Y axis
-fn rotate_cube(time: Res<Time>, mut query: Query<&mut Transform, With<RotatingCube>>) {
-    for mut transform in &mut query {
-        // Rotate 90 degrees per second = π/2 radians per second ≈ 1.57 rad/s
-        transform.rotate_y(time.delta_secs() * 1.57);
-    }
-}
+// ============================================================================
+// Image Copy Pipeline (GPU -> CPU)
+// ============================================================================
 
 #[derive(Resource, Deref)]
 struct MainWorldReceiver(Receiver<Vec<u8>>);
@@ -294,7 +223,7 @@ impl Plugin for ImageCopyPlugin {
     }
 }
 
-#[derive(Clone, Component)]
+#[derive(Clone, bevy::ecs::component::Component)]
 struct ImageCopier {
     buffer: Buffer,
     enabled: Arc<AtomicBool>,
@@ -435,6 +364,10 @@ fn receive_image_from_buffer(
     }
 }
 
+// ============================================================================
+// Frame Display
+// ============================================================================
+
 /// PRE-BUFFER STRATEGY: Copy GPU data to stable buffer first, then draw from buffer
 /// This ensures matrix refresh thread sees consistent intermediate states
 fn receive_and_display_frame(
@@ -443,15 +376,11 @@ fn receive_and_display_frame(
     mut frame_buffer: ResMut<FrameBuffer>,
     #[cfg(all(target_os = "linux", feature = "matrix"))] mut matrix_res: ResMut<MatrixResource>,
 ) {
-    static mut FRAME_COUNT: u32 = 0;
-
     let Ok(mut padded_image_data) = receiver.try_recv() else {
         return;
     };
 
-    unsafe {
-        FRAME_COUNT += 1;
-    }
+    let frame_num = FRAME_COUNT.fetch_add(1, Ordering::Relaxed);
 
     // Get latest frame if multiple are queued
     while let Ok(newer_data) = receiver.try_recv() {
@@ -479,68 +408,48 @@ fn receive_and_display_frame(
             .collect()
     };
 
-    // PHASE 1: Fast copy to pre-buffer (instant memcpy ~1µs)
-    let copy_start = std::time::Instant::now();
+    // Copy to pre-buffer
     frame_buffer.data.copy_from_slice(&image_data);
-    let copy_duration = copy_start.elapsed();
 
-    // DEBUG: Print center pixel RGB values to diagnose color issues
-    unsafe {
-        if FRAME_COUNT <= 10 || FRAME_COUNT % 60 == 0 {
-            let center_idx = (32 * 64 + 32) * 4; // Center pixel (32,32)
-            println!(
-                "CENTER PIXEL: R={}, G={}, B={}, A={}",
-                frame_buffer.data[center_idx],
-                frame_buffer.data[center_idx + 1],
-                frame_buffer.data[center_idx + 2],
-                frame_buffer.data[center_idx + 3]
-            );
-        }
+    // Debug: Log center pixel
+    if debug::LOG_CENTER_PIXEL && (frame_num < 10 || frame_num % 300 == 0) {
+        let center_idx = (32 * 64 + 32) * 4;
+        println!(
+            "Frame {}: center pixel RGB({}, {}, {})",
+            frame_num,
+            frame_buffer.data[center_idx],
+            frame_buffer.data[center_idx + 1],
+            frame_buffer.data[center_idx + 2]
+        );
     }
 
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     {
         use rpi_led_matrix::LedColor;
 
-        // ===== DEBUG FLAGS =====
-        // Step 2: Set to true to bypass GPU and test direct red write
-        const DEBUG_DIRECT_RED: bool = false;
-        // Step 3: Set to true to swap R and B channels (RGBA -> BGRA)
-        const DEBUG_SWAP_RB: bool = false;
-        // =======================
-
-        if DEBUG_DIRECT_RED {
-            // Override frame_buffer with solid red to test matrix display
-            for y in 0..height {
-                for x in 0..width {
-                    let idx = (y * width + x) * 4;
-                    frame_buffer.data[idx] = 255; // R
-                    frame_buffer.data[idx + 1] = 0; // G
-                    frame_buffer.data[idx + 2] = 0; // B
-                    frame_buffer.data[idx + 3] = 255; // A
-                }
+        if debug::DIRECT_RED_TEST {
+            // Override frame_buffer with solid red
+            for pixel in frame_buffer.data.chunks_mut(4) {
+                pixel[0] = 255; // R
+                pixel[1] = 0;   // G
+                pixel[2] = 0;   // B
+                pixel[3] = 255; // A
             }
         }
 
         if let Some(mut canvas) = matrix_res.offscreen_canvas.take() {
-            // PHASE 2: Draw from stable buffer to canvas
-            let draw_start = std::time::Instant::now();
-
             for y in 0..height {
                 for x in 0..width {
                     let pixel_idx = (y * width + x) * 4;
 
                     if pixel_idx + 3 <= frame_buffer.data.len() {
-                        // Read channels (optionally swapped)
-                        let (r, g, b) = if DEBUG_SWAP_RB {
-                            // Swap R and B: read as BGRA instead of RGBA
+                        let (r, g, b) = if debug::SWAP_RB_CHANNELS {
                             (
-                                frame_buffer.data[pixel_idx + 2], // B->R
-                                frame_buffer.data[pixel_idx + 1], // G stays
-                                frame_buffer.data[pixel_idx],     // R->B
+                                frame_buffer.data[pixel_idx + 2],
+                                frame_buffer.data[pixel_idx + 1],
+                                frame_buffer.data[pixel_idx],
                             )
                         } else {
-                            // Normal RGBA
                             (
                                 frame_buffer.data[pixel_idx],
                                 frame_buffer.data[pixel_idx + 1],
@@ -548,46 +457,25 @@ fn receive_and_display_frame(
                             )
                         };
 
-                        let color = LedColor {
-                            red: r,
-                            green: g,
-                            blue: b,
-                        };
-                        canvas.set(x as i32, y as i32, &color);
+                        canvas.set(x as i32, y as i32, &LedColor { red: r, green: g, blue: b });
                     }
                 }
             }
 
-            let draw_duration = draw_start.elapsed();
-
-            // Swap canvas
             matrix_res.offscreen_canvas = Some(matrix_res.matrix.swap(canvas));
+        }
 
-            unsafe {
-                if FRAME_COUNT <= 10 || FRAME_COUNT % 60 == 0 {
-                    println!(
-                        "FRAME {}: copy={:?}, draw={:?}, total={:?}",
-                        FRAME_COUNT,
-                        copy_duration,
-                        draw_duration,
-                        copy_duration + draw_duration
-                    );
-                }
-            }
+        // Periodic frame logging (every 300 frames)
+        if frame_num < 10 || frame_num % 300 == 0 {
+            println!("Frame {} displayed", frame_num);
         }
     }
 
     #[cfg(not(all(target_os = "linux", feature = "matrix")))]
     {
-        unsafe {
-            if FRAME_COUNT <= 10 || FRAME_COUNT % 60 == 0 {
-                println!(
-                    "FRAME {}: copy={:?} ({} bytes)",
-                    FRAME_COUNT,
-                    copy_duration,
-                    image_data.len()
-                );
-            }
+        // Periodic frame logging for non-matrix builds
+        if frame_num < 10 || frame_num % 300 == 0 {
+            println!("Frame {} processed ({} bytes)", frame_num, image_data.len());
         }
     }
 }

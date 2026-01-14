@@ -1,8 +1,15 @@
-// TEST 5: GPU Rendering with 3D Scene (Rotating Cube)
-// This test adds full 3D rendering to the proven working GPU pipeline from Test 4
+// Bevy 3D Demo - GPU rendering to LED matrix (Pi) or window (Mac)
+//
+// Run modes:
+//   - `cargo run` (Mac): Opens window with rotating red cube
+//   - `cargo build --features matrix --no-default-features` (Pi): Headless LED matrix rendering
 
 use bevy::app::App;
 use bevy::DefaultPlugins;
+
+// Shared modules (both platforms)
+mod scene_setup;
+use scene_setup::ScenePlugin;
 
 // Headless mode plugins
 #[cfg(not(feature = "window"))]
@@ -12,15 +19,15 @@ use bevy::window::{ExitCondition, WindowPlugin};
 #[cfg(not(feature = "window"))]
 use std::time::Duration;
 
-// Declare the modules
+// Matrix rendering only used in headless mode
+#[cfg(not(feature = "window"))]
+mod matrix_render;
+#[cfg(not(feature = "window"))]
+use matrix_render::MatrixRenderPlugin;
+
+// ECS demo (optional, for testing)
 mod basic_demo;
 use basic_demo::BasicDemoPlugin;
-
-// GPU rendering only used in headless mode
-#[cfg(not(feature = "window"))]
-mod gpu_render;
-#[cfg(not(feature = "window"))]
-use gpu_render::GpuRenderPlugin;
 
 // Target frame rate for headless mode
 #[cfg(not(feature = "window"))]
@@ -40,13 +47,8 @@ fn main() {
 
     #[cfg(not(feature = "window"))]
     {
-        println!(
-            "Running in headless mode with 3D GPU rendering (fixed timestep: {}ms)",
-            FRAME_TIME_MS
-        );
-        println!("TEST 5: 3D rotating cube with pre-buffer strategy");
+        println!("Running in headless mode ({}ms frame time)", FRAME_TIME_MS);
 
-        // Using DefaultPlugins (proven to work in Test 2)
         app.add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: None,
             exit_condition: ExitCondition::DontExit,
@@ -59,10 +61,15 @@ fn main() {
         });
     }
 
+    // Shared 3D scene (works on both platforms)
+    app.add_plugins(ScenePlugin);
+
+    // ECS demo
     app.add_plugins(BasicDemoPlugin);
 
+    // Matrix rendering (headless only)
     #[cfg(not(feature = "window"))]
-    app.add_plugins(GpuRenderPlugin);
+    app.add_plugins(MatrixRenderPlugin);
 
     app.run();
 }

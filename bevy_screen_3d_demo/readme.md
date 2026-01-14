@@ -1,7 +1,5 @@
 # Bevy + RGB Matrix Integration
 
-(WIP)
-
 ## Current Status
 
 This is a minimal Bevy app demonstrating platform-specific plugin configuration:
@@ -22,6 +20,7 @@ Milestones:
 
 ## Pending
 
+- Improve documentation
 - Try a rendering approach that draws directly to the screen canvas instead of using double buffering swap stuff
 - Add FPS diagnostics
 - Improve video documenting: Remove screen flickering when taking videos of the screen for documentation purposes

@@ -1,6 +1,6 @@
 # WebGPU + Rust + LED Matrix [WIP]
 
-This repo documents my AI-driven attempts at learning about modern rendering pipelines, Rust and cross-platform game development using the bevy game engine. 
+This repo documents my AI-driven attempts at learning about modern rendering pipelines, Rust and cross-platform game development using the [Bevy game engine](https://github.com/bevyengine/bevy). 
 
 ## Examples
 
@@ -12,19 +12,20 @@ Each example is a separate Bevy project.
 
 ## About
 
-After some time of looking for fun ways to run graphics code in an environment other than the browser. I came across bevy, a Rust based videogame engine. I really wanted to try it out, as its not only promising for building games but also suitable for building high-performance graphical interfaces. 
+After some time of looking for fun ways to run graphics code in an environment other than the browser, I finally came across [Bevy](https://github.com/bevyengine/bevy), a Rust based videogame engine which uses [Rust's WebGPU API](https://github.com/gfx-rs/wgpu). I really wanted to try it out, as its not only promising for building games but also suitable for building high-performance graphical interfaces. 
 
 Hardware: 
-- Raspberry Pi Zero 2 W. Running on headless mode. Ideal for putting Rust to the test.
-- Adafruit RGB Matrix Bonnet, compatible (almost) out of the box with Rust bindings for rpi-rgb-led-matrix by [name]().
-- 64x64 px RGB LED Matrix display. Modest but fun.
-- Custom 3d printed support for Rpi + screen
+- [Raspberry Pi Zero 2 W](https://www.raspberrypi.com/products/raspberry-pi-zero-2-w/). Running on headless mode. Ideal for putting Rust to the test.
+- [Adafruit RGB Matrix Bonnet for Raspberry Pi](https://www.adafruit.com/product/3211), compatible (almost) out of the box with the [Rust bindings](https://crates.io/crates/rpi-led-matrix) for [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix) by Vince Pasquier.
+- [64x64 px RGB LED Matrix display](https://www.adafruit.com/product/4732). Modest but fun.
+- Custom 3d printed support for Rpi + screen (See photos below) 
 
-I ran into a several challenges implementing this. 
-- The first one was cross compilation. Since the Pi Zero does not have enough RAM to run the Rust compiler. A mac-to-pi crosscompilation step was needed.
-- Another challenge was running the game in headless mode. A headless environment meansno OS desktop environment -> no window -> no render target. 
+I ran into a several challenges implementing this. Including:
+- Compilation: The Pi Zero doesn't have enough RAM to run the Rust compiler. A Mac-to-Pi cross-compilation step was needed.
+- Running the game in headless mode. A headless environment means no OS desktop environment -> no window -> no render target. 
 - Assuming we could generate and obtain the rendered frame from Bevy:  How can we even extract it and paint it to the screen at a decent speed?
-- Tweak the screen configuration to work nicely with.
+- Tweak the screen configuration to get glitch-free images.
+- Figuring out platform specific dependencies, etc..
 
 The goal was to create a proof-of-concept workflow for developing cross-platform games in resource-constrained systems.
 

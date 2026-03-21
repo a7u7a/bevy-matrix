@@ -4,13 +4,12 @@
 use bevy::app::{App, Plugin, PostStartup, PostUpdate};
 use bevy::asset::{Assets, Handle};
 use bevy::camera::RenderTarget;
-use bevy::color::Color;
 use bevy::ecs::query::With;
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::ecs::world::World;
 use bevy::image::Image;
-use bevy::prelude::{Camera, Camera3d, ClearColorConfig, Deref, DerefMut, Resource};
+use bevy::prelude::{Camera, Camera2d, Deref, DerefMut, Resource};
 use bevy::render::render_asset::RenderAssets;
 use bevy::render::render_graph::{
     self, NodeRunError, RenderGraph, RenderGraphContext, RenderLabel,
@@ -27,7 +26,7 @@ use std::sync::{
     Arc,
 };
 
-use crate::scene_setup::{RENDER_HEIGHT, RENDER_WIDTH};
+use crate::frag_shader::{RENDER_HEIGHT, RENDER_WIDTH};
 
 /// Frame counter for logging (using atomic to avoid static mut warnings)
 static FRAME_COUNT: AtomicU32 = AtomicU32::new(0);
@@ -115,7 +114,7 @@ fn initialize_matrix(mut commands: Commands) {
         options.set_refresh_rate(true);
 
         // Display quality settings
-        let _ = options.set_pwm_lsb_nanoseconds(200);
+        let _ = options.set_pwm_lsb_nanoseconds(80);
         let _ = options.set_pwm_bits(7);
         let _ = options.set_brightness(30);
         // let _ = options.set_pwm_dither_bits(2); // No noticeable difference in quality
@@ -145,7 +144,7 @@ fn setup_render_target(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     render_device: Res<RenderDevice>,
-    mut camera_query: Query<&mut Camera, With<Camera3d>>,
+    mut camera_query: Query<&mut Camera, With<Camera2d>>,
 ) {
     let size = Extent3d {
         width: RENDER_WIDTH,
@@ -163,11 +162,9 @@ fn setup_render_target(
 
     commands.insert_resource(RenderTargetHandle(render_target_handle.clone()));
 
-    // Configure the existing camera to render to our texture
     match camera_query.single_mut() {
         Ok(mut camera) => {
             camera.target = RenderTarget::Image(render_target_handle.clone().into());
-            camera.clear_color = ClearColorConfig::Custom(Color::BLACK);
         }
         Err(e) => {
             eprintln!("ERROR: Failed to find camera for render target: {:?}", e);
@@ -431,9 +428,17 @@ fn receive_and_display_frame(
             matrix_res.offscreen_canvas = Some(matrix_res.matrix.swap(canvas));
         }
 
-        // Periodic frame logging (every 300 frames)
         if frame_num < 10 || frame_num % 300 == 0 {
-            println!("Frame {} displayed", frame_num);
+            let center = (height / 2 * width + width / 2) * 4;
+            let (cr, cg, cb) = (
+                frame_buffer.data[center],
+                frame_buffer.data[center + 1],
+                frame_buffer.data[center + 2],
+            );
+            println!(
+                "Frame {} displayed (center pixel: r={} g={} b={})",
+                frame_num, cr, cg, cb
+            );
         }
     }
 

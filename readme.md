@@ -4,7 +4,7 @@ This repo documents my AI-driven attempts at learning about modern rendering pip
 
 ## Examples
 
-Each example is a separate Bevy project.
+Each example runs on its own Bevy project:
 
 - [`bevy_screen_demo`](/bevy_screen_demo/readme.md) <- Smoke test
 - [`bevy_screen_3d_demo`](/bevy_screen_3d_demo/) <- Basic 3d scene demo(Boring cube but more interesting stuff coming up)
@@ -31,13 +31,15 @@ The goal was to create a proof-of-concept workflow for developing cross-platform
 
 I'm not heavily invested in rust, yet. However, I suspect there is promise in the potential for synergy between rust and webgpu that bevy could unlock.
 
-## Build photos
+## Build gallery
 
 (Upcoming)
 
+
+
 ## Setup
 
-## Running examples on Mac
+### Running examples on Mac
 
 Navigate to an example folder and run:
 
@@ -69,9 +71,9 @@ cargo build --release
 
 The dev profile balances compile time and runtime performance. First compile is slow (dependencies), but subsequent builds are fast since dependencies are cached.
 
-## Deploying to Raspberry Pi
+### Running examples on the Raspberry Pi
 
-### Cross compiling setup
+#### The cross-compilation setup
 
 **On the Mac:**
 

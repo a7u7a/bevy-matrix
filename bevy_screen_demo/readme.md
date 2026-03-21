@@ -1,6 +1,6 @@
 # Bevy + RGB Matrix test
 
-Minimal test to confirm RGB Matrix + Bevy functionality
+RGB Matrix + Bevy smoke test
 
 ```bash
 cargo build --release --target aarch64-unknown-linux-gnu --features matrix --no-default-features

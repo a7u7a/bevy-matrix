@@ -109,13 +109,19 @@ Now we have a basic cross compiling setup for the game.
 
 ### Cross-compile the game for Pi
 
-On Mac:
+On the Mac: Use the deploy script.
 
-```bash
-./deploy.sh
+```
+$ ./deploy.sh
+Building for Raspberry Pi...
+Finished `release` profile [optimized] target(s) in 0.32s
+Binary size: 66 MB
+Copying to Pi...
+bevy_screen_3d_demo                                                                                                                                                                                                                                          100%   65MB   4.6MB/s   00:14    
+Done! Binary deployed to ayu@pi.local:~/
 ```
 
-Run on Pi:
+On the Pi:
 
 ```bash
 sudo ./my_bevy_game

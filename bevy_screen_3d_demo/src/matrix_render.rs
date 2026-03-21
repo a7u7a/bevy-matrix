@@ -116,8 +116,9 @@ fn initialize_matrix(mut commands: Commands) {
 
         // Display quality settings
         let _ = options.set_pwm_lsb_nanoseconds(200);
-        let _ = options.set_pwm_bits(9);
-        let _ = options.set_brightness(40);
+        let _ = options.set_pwm_bits(7);
+        let _ = options.set_brightness(30);
+        // let _ = options.set_pwm_dither_bits(2); // No noticeable difference in quality
 
         let matrix = LedMatrix::new(Some(options), None).expect("Failed to create LED matrix");
         let offscreen_canvas = matrix.offscreen_canvas();

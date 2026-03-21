@@ -45,7 +45,7 @@ fn setup_3d_scene(
 ) {
     // Red cube at origin with rotation marker
     let material = StandardMaterial {
-        base_color: Color::srgb(1.0, 0.0, 0.0), // Red
+        base_color: Color::srgb(0.0,1.0, 0.0), // Red
         ..Default::default()
     };
 

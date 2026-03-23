@@ -1,12 +1,12 @@
 use bevy::app::{App, Plugin, Startup, Update};
 use bevy::asset::{embedded_asset, embedded_path, Asset, AssetPath, Assets, Handle};
 use bevy::ecs::system::{Commands, Res, ResMut};
+use bevy::prelude::Mesh2d;
 use bevy::prelude::{Camera2d, Rectangle};
 use bevy::reflect::TypePath;
 use bevy::render::render_resource::AsBindGroup;
 use bevy::shader::ShaderRef;
 use bevy::sprite_render::{Material2d, Material2dPlugin, MeshMaterial2d};
-use bevy::prelude::Mesh2d;
 use bevy::time::Time;
 use bevy::transform::components::Transform;
 
@@ -49,10 +49,7 @@ fn setup(
     commands.insert_resource(FragShaderMaterialHandle(material_handle.clone()));
 
     commands.spawn((
-        Mesh2d(meshes.add(Rectangle::new(
-            RENDER_WIDTH as f32,
-            RENDER_HEIGHT as f32,
-        ))),
+        Mesh2d(meshes.add(Rectangle::new(RENDER_WIDTH as f32, RENDER_HEIGHT as f32))),
         MeshMaterial2d(material_handle),
         Transform::from_xyz(0.0, 0.0, 0.0),
     ));
@@ -67,6 +64,6 @@ fn update_time(
     mut materials: ResMut<Assets<FragShaderMaterial>>,
 ) {
     if let Some(material) = materials.get_mut(&handle.0) {
-        material.time = time.elapsed_secs();
+        material.time = time.elapsed_secs() / 5.0;
     }
 }

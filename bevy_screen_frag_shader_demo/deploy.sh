@@ -15,6 +15,5 @@ echo "Binary size: ${SIZE_MB} MB"
 
 echo "Copying to Pi..."
 scp $BINARY_PATH $HOST:~/
-scp -r assets $HOST:~/
 
 echo "Done! Binary and assets deployed to $HOST:~/"

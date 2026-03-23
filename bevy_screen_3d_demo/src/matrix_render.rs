@@ -33,6 +33,41 @@ use crate::scene_setup::{RENDER_HEIGHT, RENDER_WIDTH};
 static FRAME_COUNT: AtomicU32 = AtomicU32::new(0);
 
 // ============================================================================
+// Ordered Dithering (8-bit → PWM_BITS quantization)
+// ============================================================================
+
+/// Must match the value passed to `options.set_pwm_bits()` in initialize_matrix
+const PWM_BITS: u32 = 7;
+
+/// Bayer 4x4 ordered dither threshold matrix.
+/// Values 0..15 provide 16 spatially distributed thresholds.
+#[rustfmt::skip]
+const BAYER_4X4: [[u16; 4]; 4] = [
+    [ 0,  8,  2, 10],
+    [12,  4, 14,  6],
+    [ 3, 11,  1,  9],
+    [15,  7, 13,  5],
+];
+
+/// Dither a single 8-bit channel value to the available PWM output levels,
+/// then map back to the 8-bit range the LED library expects.
+#[inline]
+fn dither_channel(value: u8, x: usize, y: usize) -> u8 {
+    let max_output: u32 = (1 << PWM_BITS) - 1; // 127 for 7-bit
+    let threshold = BAYER_4X4[y & 3][x & 3] as u32;
+
+    // Scale input into output range with 4 extra fractional bits (×16)
+    // so the Bayer threshold (0..15) can interpolate within one step.
+    // u32 required: worst case 255 * 127 * 16 = 518,160 (overflows u16).
+    let scaled = value as u32 * max_output * 16;
+    let quantized = (scaled + threshold * 255) / (255 * 16);
+    let clamped = quantized.min(max_output);
+
+    // Map back to [0, 255] for the LED library
+    (clamped * 255 / max_output) as u8
+}
+
+// ============================================================================
 // LED Matrix Types
 // ============================================================================
 #[cfg(all(target_os = "linux", feature = "matrix"))]
@@ -409,11 +444,9 @@ fn receive_and_display_frame(
                     let pixel_idx = (y * width + x) * 4;
 
                     if pixel_idx + 3 <= frame_buffer.data.len() {
-                        let (r, g, b) = (
-                            frame_buffer.data[pixel_idx],
-                            frame_buffer.data[pixel_idx + 1],
-                            frame_buffer.data[pixel_idx + 2],
-                        );
+                        let r = dither_channel(frame_buffer.data[pixel_idx], x, y);
+                        let g = dither_channel(frame_buffer.data[pixel_idx + 1], x, y);
+                        let b = dither_channel(frame_buffer.data[pixel_idx + 2], x, y);
 
                         canvas.set(
                             x as i32,
@@ -431,9 +464,18 @@ fn receive_and_display_frame(
             matrix_res.offscreen_canvas = Some(matrix_res.matrix.swap(canvas));
         }
 
-        // Periodic frame logging (every 300 frames)
+        // For debugging
         if frame_num < 10 || frame_num % 300 == 0 {
-            println!("Frame {} displayed", frame_num);
+            let center = (height / 2 * width + width / 2) * 4;
+            let (cr, cg, cb) = (
+                frame_buffer.data[center],
+                frame_buffer.data[center + 1],
+                frame_buffer.data[center + 2],
+            );
+            println!(
+                "Frame {} displayed (center pixel: r={} g={} b={})",
+                frame_num, cr, cg, cb
+            );
         }
     }
 

@@ -149,10 +149,10 @@ fn initialize_matrix(mut commands: Commands) {
         options.set_refresh_rate(true);
 
         // Display quality settings
-        let _ = options.set_pwm_lsb_nanoseconds(80);
+        let _ = options.set_pwm_lsb_nanoseconds(120);
         let _ = options.set_pwm_bits(7);
         let _ = options.set_brightness(30);
-        // let _ = options.set_pwm_dither_bits(2); // No noticeable difference in quality
+        let _ = options.set_pwm_dither_bits(2);
 
         let matrix = LedMatrix::new(Some(options), None).expect("Failed to create LED matrix");
         let offscreen_canvas = matrix.offscreen_canvas();
@@ -461,6 +461,7 @@ fn receive_and_display_frame(
             matrix_res.offscreen_canvas = Some(matrix_res.matrix.swap(canvas));
         }
 
+        // For debugging
         if frame_num < 10 || frame_num % 300 == 0 {
             let center = (height / 2 * width + width / 2) * 4;
             let (cr, cg, cb) = (

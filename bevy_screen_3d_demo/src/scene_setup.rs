@@ -77,6 +77,6 @@ fn setup_3d_scene(
 /// Rotate the cube at 90 degrees per second on Y axis
 fn rotate_cube(time: Res<Time>, mut query: Query<&mut Transform, With<RotatingCube>>) {
     for mut transform in &mut query {
-        transform.rotate_y(time.delta_secs() * 1.57);
+        transform.rotate_y(time.delta_secs() * 0.57);
     }
 }

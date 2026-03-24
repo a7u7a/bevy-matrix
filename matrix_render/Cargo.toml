@@ -1,0 +1,25 @@
+[package]
+name = "matrix_render"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { workspace = true, features = [
+    "bevy_core_pipeline",
+    "bevy_asset",
+    "bevy_render",
+    "bevy_camera",
+    "bevy_mesh",
+    "bevy_image",
+    "bevy_shader",
+    "bevy_color",
+    "bevy_window",
+    "zstd_rust",
+] }
+crossbeam-channel = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rpi-led-matrix = { version = "0.2", optional = true }
+
+[features]
+matrix = ["rpi-led-matrix"]

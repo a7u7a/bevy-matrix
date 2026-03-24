@@ -9,6 +9,7 @@ use bevy::shader::ShaderRef;
 use bevy::sprite_render::{Material2d, Material2dPlugin, MeshMaterial2d};
 use bevy::time::Time;
 use bevy::transform::components::Transform;
+use matrix_render::MatrixCamera;
 
 pub const RENDER_WIDTH: u32 = 64;
 pub const RENDER_HEIGHT: u32 = 64;
@@ -43,7 +44,7 @@ fn setup(
     mut meshes: ResMut<Assets<bevy::mesh::Mesh>>,
     mut materials: ResMut<Assets<FragShaderMaterial>>,
 ) {
-    commands.spawn(Camera2d);
+    commands.spawn((Camera2d, MatrixCamera));
 
     let material_handle = materials.add(FragShaderMaterial { time: 0.0 });
     commands.insert_resource(FragShaderMaterialHandle(material_handle.clone()));

@@ -19,11 +19,8 @@ use bevy::window::{ExitCondition, WindowPlugin};
 #[cfg(not(feature = "window"))]
 use std::time::Duration;
 
-// Matrix rendering only used in headless mode
 #[cfg(not(feature = "window"))]
-mod matrix_render;
-#[cfg(not(feature = "window"))]
-use matrix_render::MatrixRenderPlugin;
+use matrix_render::{MatrixConfig, MatrixRenderPlugin};
 
 // ECS demo (optional, for testing)
 mod basic_demo;
@@ -67,9 +64,13 @@ fn main() {
     // ECS demo
     app.add_plugins(BasicDemoPlugin);
 
-    // Matrix rendering (headless only)
     #[cfg(not(feature = "window"))]
-    app.add_plugins(MatrixRenderPlugin);
+    app.add_plugins(MatrixRenderPlugin {
+        config: MatrixConfig {
+            pwm_lsb_nanoseconds: 200,
+            ..Default::default()
+        },
+    });
 
     app.run();
 }

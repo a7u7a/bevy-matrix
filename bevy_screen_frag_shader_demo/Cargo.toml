@@ -4,12 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy = { version = "0.17.3", default-features = false, features = [
+bevy = { workspace = true, features = [
     "bevy_core_pipeline",
     "bevy_asset",
     "zstd_rust",
 ] }
-crossbeam-channel = "0.5"
+crossbeam-channel = { workspace = true }
+matrix_render = { path = "../matrix_render" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rpi-led-matrix = { version = "0.2", optional = true }
@@ -24,6 +25,7 @@ window = [
     "bevy/x11",
 ]
 matrix = [
+    "matrix_render/matrix",
     "rpi-led-matrix",
     "bevy/multi_threaded",
     "bevy/bevy_render",
@@ -36,16 +38,3 @@ matrix = [
     "bevy/bevy_color",
     "bevy/bevy_window",
 ]
-
-# Optimize dev builds for faster iteration (Bevy best practice)
-[profile.dev]
-opt-level = 1
-
-# Even faster compile for quick checks (cargo build --profile dev-fast)
-[profile.dev-fast]
-inherits = "dev"
-opt-level = 0
-
-# Optimize dependencies even in dev mode
-[profile.dev.package."*"]
-opt-level = 3

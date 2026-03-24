@@ -18,9 +18,7 @@ use bevy::window::{ExitCondition, WindowPlugin};
 use std::time::Duration;
 
 #[cfg(not(feature = "window"))]
-mod matrix_render;
-#[cfg(not(feature = "window"))]
-use matrix_render::MatrixRenderPlugin;
+use matrix_render::{MatrixConfig, MatrixRenderPlugin};
 
 #[cfg(not(feature = "window"))]
 const TARGET_FPS: u64 = 60;
@@ -55,7 +53,13 @@ fn main() {
     app.add_plugins(FragShaderPlugin);
 
     #[cfg(not(feature = "window"))]
-    app.add_plugins(MatrixRenderPlugin);
+    app.add_plugins(MatrixRenderPlugin {
+        config: MatrixConfig {
+            pwm_lsb_nanoseconds: 100,
+            pwm_dither_bits: Some(2),
+            ..Default::default()
+        },
+    });
 
     app.run();
 }

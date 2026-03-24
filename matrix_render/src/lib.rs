@@ -1,15 +1,19 @@
-// Matrix rendering module for headless mode (Raspberry Pi)
-// Handles GPU render target setup and LED matrix display
+// Shared matrix rendering module for headless mode (Raspberry Pi)
+// Handles GPU render target setup, GPU->CPU copy, and LED matrix display.
+//
+// Usage: add `MatrixCamera` marker to the camera you want rendered,
+// then add `MatrixRenderPlugin { config: MatrixConfig { .. } }`.
 
 use bevy::app::{App, Plugin, PostStartup, PostUpdate};
 use bevy::asset::{Assets, Handle};
 use bevy::camera::RenderTarget;
+use bevy::ecs::component::Component;
 use bevy::ecs::query::With;
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::ecs::world::World;
 use bevy::image::Image;
-use bevy::prelude::{Camera, Camera2d, Deref, DerefMut, Resource};
+use bevy::prelude::{Camera, Deref, DerefMut, Resource};
 use bevy::render::render_asset::RenderAssets;
 use bevy::render::render_graph::{
     self, NodeRunError, RenderGraph, RenderGraphContext, RenderLabel,
@@ -26,21 +30,71 @@ use std::sync::{
     Arc,
 };
 
-use crate::frag_shader::{RENDER_HEIGHT, RENDER_WIDTH};
-
-/// Frame counter for logging (using atomic to avoid static mut warnings)
-static FRAME_COUNT: AtomicU32 = AtomicU32::new(0);
-
 // ============================================================================
-// Ordered Dithering (8-bit → PWM_BITS quantization)
+// Public API
 // ============================================================================
 
-/// Must match the value passed to `options.set_pwm_bits()` in initialize_matrix
-const PWM_BITS: u32 = 7;
+/// Marker component for the camera that should render to the LED matrix.
+/// Attach this to your camera entity in your scene setup.
+#[derive(Component)]
+pub struct MatrixCamera;
 
-/// Bayer 4x4 ordered dither threshold matrix.
-/// Values 0..15 provide 16 spatially distributed thresholds.
+/// Per-example hardware/render configuration.
+#[derive(Clone, Debug, Resource)]
+pub struct MatrixConfig {
+    pub render_width: u32,
+    pub render_height: u32,
+    pub brightness: u8,
+    pub pwm_bits: u32,
+    pub pwm_lsb_nanoseconds: u32,
+    pub pwm_dither_bits: Option<u32>,
+}
+
+impl Default for MatrixConfig {
+    fn default() -> Self {
+        Self {
+            render_width: 64,
+            render_height: 64,
+            brightness: 30,
+            pwm_bits: 7,
+            pwm_lsb_nanoseconds: 200,
+            pwm_dither_bits: None,
+        }
+    }
+}
+
+/// Plugin for GPU rendering to LED matrix in headless mode.
+pub struct MatrixRenderPlugin {
+    pub config: MatrixConfig,
+}
+
+impl Plugin for MatrixRenderPlugin {
+    fn build(&self, app: &mut App) {
+        let config = self.config.clone();
+        let w = config.render_width as usize;
+        let h = config.render_height as usize;
+
+        app.insert_resource(config);
+        app.insert_resource(FrameBuffer {
+            data: vec![0u8; w * h * 4],
+        });
+
+        app.add_systems(
+            PostStartup,
+            (initialize_matrix, setup_render_target).chain(),
+        );
+
+        app.add_plugins(ImageCopyPlugin);
+        app.add_systems(PostUpdate, receive_and_display_frame);
+    }
+}
+
+// ============================================================================
+// Ordered Dithering (8-bit -> PWM_BITS quantization)
+// ============================================================================
+
 #[rustfmt::skip]
+#[cfg(all(target_os = "linux", feature = "matrix"))]
 const BAYER_4X4: [[u16; 4]; 4] = [
     [ 0,  8,  2, 10],
     [12,  4, 14,  6],
@@ -48,27 +102,23 @@ const BAYER_4X4: [[u16; 4]; 4] = [
     [15,  7, 13,  5],
 ];
 
-/// Dither a single 8-bit channel value to the available PWM output levels,
-/// then map back to the 8-bit range the LED library expects.
+#[cfg(all(target_os = "linux", feature = "matrix"))]
 #[inline]
-fn dither_channel(value: u8, x: usize, y: usize) -> u8 {
-    let max_output: u32 = (1 << PWM_BITS) - 1; // 127 for 7-bit
+fn dither_channel(value: u8, x: usize, y: usize, pwm_bits: u32) -> u8 {
+    let max_output: u32 = (1 << pwm_bits) - 1;
     let threshold = BAYER_4X4[y & 3][x & 3] as u32;
 
-    // Scale input into output range with 4 extra fractional bits (×16)
-    // so the Bayer threshold (0..15) can interpolate within one step.
-    // u32 required: worst case 255 * 127 * 16 = 518,160 (overflows u16).
     let scaled = value as u32 * max_output * 16;
     let quantized = (scaled + threshold * 255) / (255 * 16);
     let clamped = quantized.min(max_output);
 
-    // Map back to [0, 255] for the LED library
     (clamped * 255 / max_output) as u8
 }
 
 // ============================================================================
 // LED Matrix Types
 // ============================================================================
+
 #[cfg(all(target_os = "linux", feature = "matrix"))]
 use rpi_led_matrix::{LedCanvas, LedMatrix, LedMatrixOptions};
 
@@ -88,71 +138,42 @@ unsafe impl Sync for MatrixResource {}
 // Frame Buffer
 // ============================================================================
 
-/// Pre-buffer to hold stable frame data
-/// Ensures all canvas drawing operations read from a consistent frame
+static FRAME_COUNT: AtomicU32 = AtomicU32::new(0);
+
 #[derive(Resource)]
 struct FrameBuffer {
     data: Vec<u8>,
 }
 
-impl FrameBuffer {
-    fn new() -> Self {
-        let size = RENDER_WIDTH as usize * RENDER_HEIGHT as usize * 4; // RGBA
-        Self {
-            data: vec![0u8; size],
-        }
-    }
-}
-
-/// Resource to track the render target image handle
 #[derive(Resource)]
-#[allow(dead_code)] // Handle is used via pattern matching in ImageCopier
+#[allow(dead_code)]
 struct RenderTargetHandle(Handle<Image>);
-
-// ============================================================================
-// Plugin
-// ============================================================================
-
-/// Plugin for GPU rendering to LED matrix in headless mode
-pub struct MatrixRenderPlugin;
-
-impl Plugin for MatrixRenderPlugin {
-    fn build(&self, app: &mut App) {
-        app.insert_resource(FrameBuffer::new());
-
-        // PostStartup: Configure render target and matrix
-        // Runs AFTER ScenePlugin's Startup, so the camera exists to be queried
-        app.add_systems(
-            PostStartup,
-            (initialize_matrix, setup_render_target).chain(),
-        );
-
-        app.add_plugins(ImageCopyPlugin);
-        app.add_systems(PostUpdate, receive_and_display_frame);
-    }
-}
 
 // ============================================================================
 // Matrix Initialization
 // ============================================================================
 
-/// Initialize the LED matrix hardware
-fn initialize_matrix(mut commands: Commands) {
+#[allow(unused_variables, unused_mut)]
+fn initialize_matrix(mut commands: Commands, config: Res<MatrixConfig>) {
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     {
-        println!("Initializing LED matrix (64x64)...");
+        println!(
+            "Initializing LED matrix ({}x{})...",
+            config.render_width, config.render_height
+        );
 
         let mut options = LedMatrixOptions::new();
-        options.set_rows(64);
-        options.set_cols(64);
+        options.set_rows(config.render_height);
+        options.set_cols(config.render_width);
         options.set_hardware_mapping("adafruit-hat-pwm");
         options.set_refresh_rate(true);
 
-        // Display quality settings
-        let _ = options.set_pwm_lsb_nanoseconds(400);
-        let _ = options.set_pwm_bits(8);
-        let _ = options.set_brightness(30);
-        let _ = options.set_pwm_dither_bits(2);
+        let _ = options.set_pwm_lsb_nanoseconds(config.pwm_lsb_nanoseconds);
+        let _ = options.set_pwm_bits(config.pwm_bits as u8);
+        let _ = options.set_brightness(config.brightness);
+        if let Some(dither_bits) = config.pwm_dither_bits {
+            let _ = options.set_pwm_dither_bits(dither_bits);
+        }
 
         let matrix = LedMatrix::new(Some(options), None).expect("Failed to create LED matrix");
         let offscreen_canvas = matrix.offscreen_canvas();
@@ -163,31 +184,25 @@ fn initialize_matrix(mut commands: Commands) {
         });
         println!("LED matrix initialized");
     }
-
-    #[cfg(not(all(target_os = "linux", feature = "matrix")))]
-    {
-        // No-op on non-matrix platforms
-    }
 }
 
 // ============================================================================
 // Render Target Setup
 // ============================================================================
 
-/// Setup render target and configure the existing camera to render to it
 fn setup_render_target(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     render_device: Res<RenderDevice>,
-    mut camera_query: Query<&mut Camera, With<Camera2d>>,
+    config: Res<MatrixConfig>,
+    mut camera_query: Query<&mut Camera, With<MatrixCamera>>,
 ) {
     let size = Extent3d {
-        width: RENDER_WIDTH,
-        height: RENDER_HEIGHT,
+        width: config.render_width,
+        height: config.render_height,
         ..Default::default()
     };
 
-    // Create offscreen render target
     let texture_format = TextureFormat::Rgba8UnormSrgb;
 
     let mut render_target_image =
@@ -202,15 +217,14 @@ fn setup_render_target(
             camera.target = RenderTarget::Image(render_target_handle.clone().into());
         }
         Err(e) => {
-            eprintln!("ERROR: Failed to find camera for render target: {:?}", e);
+            eprintln!("ERROR: Failed to find MatrixCamera for render target: {:?}", e);
         }
     }
 
-    // Spawn the ImageCopier
     commands.spawn(ImageCopier::new(render_target_handle, size, &render_device));
     println!(
         "GPU render target initialized ({}x{})",
-        RENDER_WIDTH, RENDER_HEIGHT
+        config.render_width, config.render_height
     );
 }
 
@@ -248,7 +262,7 @@ struct ImageCopier {
     buffer: Buffer,
     enabled: Arc<AtomicBool>,
     src_image: Handle<Image>,
-    pub padded_bytes_per_row: usize,
+    padded_bytes_per_row: usize,
 }
 
 impl ImageCopier {
@@ -322,7 +336,8 @@ impl render_graph::Node for ImageCopyDriver {
             let block_size = src_image.texture_format.block_copy_size(None).unwrap();
 
             let padded_bytes_per_row = RenderDevice::align_copy_bytes_per_row(
-                (src_image.size.width as usize / block_dimensions.0 as usize) * block_size as usize,
+                (src_image.size.width as usize / block_dimensions.0 as usize)
+                    * block_size as usize,
             );
 
             encoder.copy_texture_to_buffer(
@@ -388,12 +403,11 @@ fn receive_image_from_buffer(
 // Frame Display
 // ============================================================================
 
-/// PRE-BUFFER STRATEGY: Copy GPU data to stable buffer first, then draw from buffer
-/// This ensures matrix refresh thread sees consistent intermediate states
 fn receive_and_display_frame(
     receiver: Res<MainWorldReceiver>,
     image_copiers: Query<&ImageCopier>,
     mut frame_buffer: ResMut<FrameBuffer>,
+    config: Res<MatrixConfig>,
     #[cfg(all(target_os = "linux", feature = "matrix"))] mut matrix_res: ResMut<MatrixResource>,
 ) {
     let Ok(mut padded_image_data) = receiver.try_recv() else {
@@ -402,7 +416,6 @@ fn receive_and_display_frame(
 
     let frame_num = FRAME_COUNT.fetch_add(1, Ordering::Relaxed);
 
-    // Get latest frame if multiple are queued
     while let Ok(newer_data) = receiver.try_recv() {
         padded_image_data = newer_data;
     }
@@ -411,12 +424,11 @@ fn receive_and_display_frame(
         return;
     };
 
-    let width = RENDER_WIDTH as usize;
-    let height = RENDER_HEIGHT as usize;
+    let width = config.render_width as usize;
+    let height = config.render_height as usize;
     let row_bytes = width * 4;
     let aligned_row_bytes = image_copier.padded_bytes_per_row;
 
-    // Unpad if necessary
     let image_data: Vec<u8> = if row_bytes == aligned_row_bytes {
         padded_image_data
     } else {
@@ -428,12 +440,13 @@ fn receive_and_display_frame(
             .collect()
     };
 
-    // Copy to pre-buffer
     frame_buffer.data.copy_from_slice(&image_data);
 
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     {
         use rpi_led_matrix::LedColor;
+
+        let pwm_bits = config.pwm_bits;
 
         if let Some(mut canvas) = matrix_res.offscreen_canvas.take() {
             for y in 0..height {
@@ -441,9 +454,11 @@ fn receive_and_display_frame(
                     let pixel_idx = (y * width + x) * 4;
 
                     if pixel_idx + 3 <= frame_buffer.data.len() {
-                        let r = dither_channel(frame_buffer.data[pixel_idx], x, y);
-                        let g = dither_channel(frame_buffer.data[pixel_idx + 1], x, y);
-                        let b = dither_channel(frame_buffer.data[pixel_idx + 2], x, y);
+                        let r = dither_channel(frame_buffer.data[pixel_idx], x, y, pwm_bits);
+                        let g =
+                            dither_channel(frame_buffer.data[pixel_idx + 1], x, y, pwm_bits);
+                        let b =
+                            dither_channel(frame_buffer.data[pixel_idx + 2], x, y, pwm_bits);
 
                         canvas.set(
                             x as i32,
@@ -461,7 +476,6 @@ fn receive_and_display_frame(
             matrix_res.offscreen_canvas = Some(matrix_res.matrix.swap(canvas));
         }
 
-        // For debugging
         if frame_num < 10 || frame_num % 300 == 0 {
             let center = (height / 2 * width + width / 2) * 4;
             let (cr, cg, cb) = (
@@ -478,7 +492,6 @@ fn receive_and_display_frame(
 
     #[cfg(not(all(target_os = "linux", feature = "matrix")))]
     {
-        // Periodic frame logging for non-matrix builds
         if frame_num < 10 || frame_num % 300 == 0 {
             println!("Frame {} processed ({} bytes)", frame_num, image_data.len());
         }

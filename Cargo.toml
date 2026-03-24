@@ -1,0 +1,22 @@
+[workspace]
+members = [
+    "matrix_render",
+    "bevy_screen_demo",
+    "bevy_screen_3d_demo",
+    "bevy_screen_frag_shader_demo",
+]
+resolver = "2"
+
+[workspace.dependencies]
+bevy = { version = "0.17.3", default-features = false }
+crossbeam-channel = "0.5"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev-fast]
+inherits = "dev"
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 3

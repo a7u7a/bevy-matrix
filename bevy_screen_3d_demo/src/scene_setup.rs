@@ -4,22 +4,17 @@
 
 use bevy::app::{App, Plugin, Startup, Update};
 use bevy::asset::Assets;
+use bevy::camera::ClearColorConfig;
 use bevy::color::Color;
 use bevy::ecs::component::Component;
 use bevy::ecs::query::With;
 use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::math::Vec3;
 use bevy::pbr::StandardMaterial;
-use bevy::prelude::{Camera3d, Cuboid, Mesh, Mesh3d, MeshMaterial3d, PointLight};
+use bevy::prelude::{Camera, Camera3d, Cuboid, Mesh, Mesh3d, MeshMaterial3d, PointLight};
 use bevy::time::Time;
 use bevy::transform::components::Transform;
-
-/// Target resolution for rendering (matches LED matrix dimensions)
-/// Used by matrix_render.rs in headless mode
-#[allow(dead_code)]
-pub const RENDER_WIDTH: u32 = 64;
-#[allow(dead_code)]
-pub const RENDER_HEIGHT: u32 = 64;
+use matrix_render::MatrixCamera;
 
 /// Marker component for the rotating cube
 #[derive(Component)]
@@ -66,11 +61,14 @@ fn setup_3d_scene(
         Transform::from_xyz(4.0, 8.0, 4.0),
     ));
 
-    // Camera - spawned here WITHOUT render target
-    // In headless mode, the render target will be configured in MatrixRenderPlugin
     commands.spawn((
         Camera3d::default(),
+        Camera {
+            clear_color: ClearColorConfig::Custom(Color::BLACK),
+            ..Default::default()
+        },
         Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
+        MatrixCamera,
     ));
 }
 

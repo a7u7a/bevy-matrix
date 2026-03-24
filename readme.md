@@ -131,8 +131,12 @@ Done! Binary deployed to ayu@pi.local:~/
 On the Pi:
 
 ```bash
-sudo ./my_bevy_game
+sudo ./bevy_screen_3d_demo
 ```
+
+## Tips
+
+[VSCode tasjs](.vscode/tasks.json) make dev work a lil easier.
 
 ## Troubleshooting
 

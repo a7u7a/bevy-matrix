@@ -1,0 +1,30 @@
+{
+  "version": "2.0.0",
+  "inputs": [
+    {
+      "id": "deployTarget",
+      "type": "pickString",
+      "description": "Which project to deploy?",
+      "options": [
+        "bevy_screen_frag_shader_demo",
+        "bevy_screen_3d_demo",
+        "bevy_screen_demo"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "label": "Deploy",
+      "type": "shell",
+      "command": "./deploy.sh",
+      "options": {
+        "cwd": "${workspaceFolder}/${input:deployTarget}"
+      },
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    }
+  ]
+}

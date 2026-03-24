@@ -149,7 +149,7 @@ fn initialize_matrix(mut commands: Commands) {
         options.set_refresh_rate(true);
 
         // Display quality settings
-        let _ = options.set_pwm_lsb_nanoseconds(80);
+        let _ = options.set_pwm_lsb_nanoseconds(300);
         let _ = options.set_pwm_bits(7);
         let _ = options.set_brightness(30);
         // let _ = options.set_pwm_dither_bits(1);

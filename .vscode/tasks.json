@@ -8,7 +8,8 @@
       "options": [
         "bevy_screen_frag_shader_demo",
         "bevy_screen_3d_demo",
-        "bevy_screen_demo"
+        "bevy_screen_demo",
+        "bevy_screen_frag_chain_demo"
       ]
     }
   ],

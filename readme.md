@@ -35,8 +35,6 @@ I'm not heavily invested in rust, yet. However, I suspect there is promise in th
 
 (Upcoming)
 
-
-
 ## Setup
 
 ### Running examples on Mac

@@ -996,6 +996,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_screen_frag_chain_demo"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "crossbeam-channel",
+ "matrix_render",
+ "rpi-led-matrix",
+]
+
+[[package]]
 name = "bevy_screen_frag_shader_demo"
 version = "0.1.0"
 dependencies = [

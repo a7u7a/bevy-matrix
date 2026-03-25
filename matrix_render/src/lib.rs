@@ -40,10 +40,25 @@ use std::sync::{
 pub struct MatrixCamera;
 
 /// Per-example hardware/render configuration.
+///
+/// `render_width` / `render_height` define the GPU framebuffer and logical canvas size.
+///
+/// For [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix), `panel_rows` /
+/// `panel_cols` are **per physical panel** (`--led-rows`, `--led-cols`). When both are
+/// `None`, they default to `(render_height, render_width)` (single panel matching the render
+/// target). Set them explicitly when using `chain_length` or `parallel` greater than 1.
 #[derive(Clone, Debug, Resource)]
 pub struct MatrixConfig {
     pub render_width: u32,
     pub render_height: u32,
+    /// Per-panel row count for the LED driver. `None` → use `render_height`.
+    pub panel_rows: Option<u32>,
+    /// Per-panel column count for the LED driver. `None` → use `render_width`.
+    pub panel_cols: Option<u32>,
+    /// Daisy-chained panels on one chain (`--led-chain`).
+    pub chain_length: u32,
+    /// Parallel HUB75 chains, typically 1–3 (`--led-parallel`).
+    pub parallel: u32,
     pub brightness: u8,
     pub pwm_bits: u32,
     pub pwm_lsb_nanoseconds: u32,
@@ -55,6 +70,10 @@ impl Default for MatrixConfig {
         Self {
             render_width: 64,
             render_height: 64,
+            panel_rows: None,
+            panel_cols: None,
+            chain_length: 1,
+            parallel: 1,
             brightness: 30,
             pwm_bits: 7,
             pwm_lsb_nanoseconds: 200,
@@ -157,14 +176,32 @@ struct RenderTargetHandle(Handle<Image>);
 fn initialize_matrix(mut commands: Commands, config: Res<MatrixConfig>) {
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     {
+        let (panel_rows, panel_cols) = match (config.panel_rows, config.panel_cols) {
+            (Some(rows), Some(cols)) => (rows, cols),
+            (None, None) => (config.render_height, config.render_width),
+            _ => {
+                eprintln!(
+                    "matrix_render: panel_rows and panel_cols must both be set or both unset; using render size as panel size"
+                );
+                (config.render_height, config.render_width)
+            }
+        };
+
         println!(
-            "Initializing LED matrix ({}x{})...",
-            config.render_width, config.render_height
+            "Initializing LED matrix: render {}×{}, panel {} rows × {} cols, chain={}, parallel={}...",
+            config.render_width,
+            config.render_height,
+            panel_rows,
+            panel_cols,
+            config.chain_length,
+            config.parallel,
         );
 
         let mut options = LedMatrixOptions::new();
-        options.set_rows(config.render_height);
-        options.set_cols(config.render_width);
+        options.set_rows(panel_rows);
+        options.set_cols(panel_cols);
+        options.set_chain_length(config.chain_length);
+        options.set_parallel(config.parallel);
         options.set_hardware_mapping("adafruit-hat-pwm");
         options.set_refresh_rate(true);
 

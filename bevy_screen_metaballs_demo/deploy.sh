@@ -1,6 +1,6 @@
 #!/bin/bash
 HOST=ayu@pi.local
-CRATE="bevy_screen_frag_shader_demo"
+CRATE="bevy_screen_metaballs_demo"
 
 set -euo pipefail
 

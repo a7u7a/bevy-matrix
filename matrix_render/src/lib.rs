@@ -59,6 +59,9 @@ pub struct MatrixConfig {
     pub chain_length: u32,
     /// Parallel HUB75 chains, typically 1–3 (`--led-parallel`).
     pub parallel: u32,
+    /// GPIO slowdown factor (`--led-gpio-slowdown`). Higher values help signal integrity on
+    /// faster Pis or with long cables; try 1–4 to match a working hzeller demo.
+    pub gpio_slowdown: u32,
     pub brightness: u8,
     pub pwm_bits: u32,
     pub pwm_lsb_nanoseconds: u32,
@@ -72,8 +75,9 @@ impl Default for MatrixConfig {
             render_height: 64,
             panel_rows: None,
             panel_cols: None,
-            chain_length: 1,
+            chain_length: 1, 
             parallel: 1,
+            gpio_slowdown: 0,
             brightness: 30,
             pwm_bits: 7,
             pwm_lsb_nanoseconds: 200,
@@ -139,7 +143,7 @@ fn dither_channel(value: u8, x: usize, y: usize, pwm_bits: u32) -> u8 {
 // ============================================================================
 
 #[cfg(all(target_os = "linux", feature = "matrix"))]
-use rpi_led_matrix::{LedCanvas, LedMatrix, LedMatrixOptions};
+use rpi_led_matrix::{LedCanvas, LedMatrix, LedMatrixOptions, LedRuntimeOptions};
 
 #[cfg(all(target_os = "linux", feature = "matrix"))]
 #[derive(Resource)]
@@ -188,13 +192,14 @@ fn initialize_matrix(mut commands: Commands, config: Res<MatrixConfig>) {
         };
 
         println!(
-            "Initializing LED matrix: render {}×{}, panel {} rows × {} cols, chain={}, parallel={}...",
+            "Initializing LED matrix: render {}×{}, panel {} rows × {} cols, chain={}, parallel={}, gpio_slowdown={}...",
             config.render_width,
             config.render_height,
             panel_rows,
             panel_cols,
             config.chain_length,
             config.parallel,
+            config.gpio_slowdown,
         );
 
         let mut options = LedMatrixOptions::new();
@@ -203,6 +208,7 @@ fn initialize_matrix(mut commands: Commands, config: Res<MatrixConfig>) {
         options.set_chain_length(config.chain_length);
         options.set_parallel(config.parallel);
         options.set_hardware_mapping("adafruit-hat-pwm");
+        options.set_hardware_pulsing(true);
         options.set_refresh_rate(true);
 
         let _ = options.set_pwm_lsb_nanoseconds(config.pwm_lsb_nanoseconds);
@@ -212,7 +218,11 @@ fn initialize_matrix(mut commands: Commands, config: Res<MatrixConfig>) {
             let _ = options.set_pwm_dither_bits(dither_bits);
         }
 
-        let matrix = LedMatrix::new(Some(options), None).expect("Failed to create LED matrix");
+        let mut rt_options = LedRuntimeOptions::new();
+        rt_options.set_gpio_slowdown(config.gpio_slowdown);
+
+        let matrix =
+            LedMatrix::new(Some(options), Some(rt_options)).expect("Failed to create LED matrix");
         let offscreen_canvas = matrix.offscreen_canvas();
 
         commands.insert_resource(MatrixResource {

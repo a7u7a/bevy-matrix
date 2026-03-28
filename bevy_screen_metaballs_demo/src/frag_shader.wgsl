@@ -31,7 +31,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     var color = vec3<f32>(0.0);
 
     // Scale
-    st *= 5.0;
+    st *= 10.0;
 
     // Tile the space
     let i_st = floor(st);

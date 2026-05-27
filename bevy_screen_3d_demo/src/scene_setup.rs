@@ -10,8 +10,8 @@ use bevy::ecs::component::Component;
 use bevy::ecs::query::With;
 use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::math::Vec3;
-use bevy::pbr::StandardMaterial;
 use bevy::prelude::{Camera, Camera3d, Cuboid, Mesh, Mesh3d, MeshMaterial3d, PointLight};
+use crate::uv_material::{UvMaterial, UvMaterialPlugin};
 use bevy::time::Time;
 use bevy::transform::components::Transform;
 use matrix_render::MatrixCamera;
@@ -26,6 +26,7 @@ pub struct ScenePlugin;
 
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(UvMaterialPlugin);
         app.add_systems(Startup, setup_3d_scene);
         app.add_systems(Update, rotate_cube);
     }
@@ -36,17 +37,11 @@ impl Plugin for ScenePlugin {
 fn setup_3d_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<UvMaterial>>,
 ) {
-
-    let material = StandardMaterial {
-        base_color: Color::srgb(0.0, 1.0, 1.0),
-        ..Default::default()
-    };
-
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(8.0, 6.0, 10.0))),
-        MeshMaterial3d(materials.add(material)),
+        MeshMaterial3d(materials.add(UvMaterial {})),
         Transform::from_xyz(0.0, 0.0, 0.0),
         RotatingCube,
     ));

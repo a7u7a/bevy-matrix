@@ -57,7 +57,7 @@ fn greet_people(time: Res<Time>, mut timer: ResMut<GreetTimer>, query: Query<&Na
     // Tick the timer with the time elapsed since last frame
     if timer.0.tick(time.delta()).just_finished() {
         for name in &query {
-            println!("hello {}!", name.0);
+            println!("Hello {}!", name.0);
         }
     }
 }

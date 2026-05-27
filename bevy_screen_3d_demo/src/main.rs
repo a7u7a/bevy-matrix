@@ -8,6 +8,7 @@ use bevy::app::App;
 use bevy::DefaultPlugins;
 
 // Shared modules (both platforms)
+mod uv_material;
 mod scene_setup;
 use scene_setup::ScenePlugin;
 

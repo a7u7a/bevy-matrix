@@ -154,3 +154,41 @@ echo "blacklist snd_bcm2835" | sudo tee /etc/modprobe.d/blacklist-rgb-matrix.con
 sudo reboot
 ```
 
+### Intermittent flicker on the LED matrix
+
+**Symptom:** Occasional 1-pixel-wide white horizontal streaks (random Y position, no
+more than a handful at once), appearing for a few frames then vanishing. Tends to
+appear on the second or third launch after boot rather than the first, and clears
+after a cold reboot.
+
+**What was ruled out** (Pi Zero 2 W + Adafruit RGB Matrix Bonnet + 64x64 panel,
+`gpio_slowdown=2`, `pwm_bits=7`, `pwm_lsb_nanoseconds=200`, `brightness=30`,
+`adafruit-hat-pwm`, hardware pulsing on):
+
+- App-side data path: GPU readback, padded-row stride handling, dither, and bulk
+  FFI upload produced consistent pixel data in clean and flickering runs.
+- System state: CPU governor `performance` at 1 GHz, core temp around 47 C,
+  `throttled=0x0`, `voltage=1.2563V`, no `snd_bcm2835` module loaded, and no
+  conflicting `pigpio`/`pulseaudio`/`alsa`/`jack`/`gpio` processes.
+- Timing dials: reducing `pwm_bits` to 5 or 6, raising `gpio_slowdown` to 4 or 5,
+  and lowering `brightness` to 15-20 darkens the panel below visible threshold
+  without resolving flicker.
+
+**Hypothesis that best fits the observed pattern**
+
+State outside the process: the BCM2835 hardware PWM / DMA peripherals
+(driven by the `GPIO4 <-> GPIO18` jumper for the bonnet "quality mod") can retain
+clock/divider state between launches. A previous process may leave them in a
+borderline configuration that produces OE timing jitter on the next launch. A cold
+reboot fully resets the peripheral and restores clean output.
+
+**Mitigations to try first if it returns**
+
+- Cold-reboot the Pi (`sudo shutdown -h now`, pull power for a few seconds, reconnect).
+- Confirm `snd_bcm2835` is still blacklisted and `dtparam=audio=off` is in
+  `/boot/firmware/config.txt`.
+- Make sure no other process is touching `/dev/gpiomem`, `pwmchip0`, or audio when
+  the demo starts.
+- Re-seat the bonnet on the Pi header and the ribbon cable on the panel side;
+  intermittent contacts can produce the same visual signature.
+

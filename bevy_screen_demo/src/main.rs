@@ -45,7 +45,10 @@ fn main() {
 
     #[cfg(not(feature = "window"))]
     {
-        println!("Running in headless mode (fixed timestep: {}ms)", FRAME_TIME_MS);
+        println!(
+            "Running in headless mode (fixed timestep: {}ms)",
+            FRAME_TIME_MS
+        );
         // Pi: Minimal plugins for headless operation
         // Window mode uses vsync-driven event loop (WinitPlugin)
         // Headless mode uses fixed timestep loop (ScheduleRunnerPlugin)

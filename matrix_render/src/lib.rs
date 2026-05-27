@@ -75,9 +75,9 @@ impl Default for MatrixConfig {
             render_height: 64,
             panel_rows: None,
             panel_cols: None,
-            chain_length: 1, 
+            chain_length: 1,
             parallel: 1,
-            gpio_slowdown: 0,
+            gpio_slowdown: 2,
             brightness: 30,
             pwm_bits: 7,
             pwm_lsb_nanoseconds: 200,
@@ -143,6 +143,9 @@ fn dither_channel(value: u8, x: usize, y: usize, pwm_bits: u32) -> u8 {
 // ============================================================================
 
 #[cfg(all(target_os = "linux", feature = "matrix"))]
+mod matrix_ffi;
+
+#[cfg(all(target_os = "linux", feature = "matrix"))]
 use rpi_led_matrix::{LedCanvas, LedMatrix, LedMatrixOptions, LedRuntimeOptions};
 
 #[cfg(all(target_os = "linux", feature = "matrix"))]
@@ -150,6 +153,8 @@ use rpi_led_matrix::{LedCanvas, LedMatrix, LedMatrixOptions, LedRuntimeOptions};
 pub struct MatrixResource {
     pub matrix: LedMatrix,
     pub offscreen_canvas: Option<LedCanvas>,
+    /// Packed RGB row-major buffer for bulk `led_canvas_set_pixels` (render_width × render_height).
+    led_pixel_scratch: Vec<matrix_ffi::MatrixRgb>,
 }
 
 #[cfg(all(target_os = "linux", feature = "matrix"))]
@@ -224,10 +229,13 @@ fn initialize_matrix(mut commands: Commands, config: Res<MatrixConfig>) {
         let matrix =
             LedMatrix::new(Some(options), Some(rt_options)).expect("Failed to create LED matrix");
         let offscreen_canvas = matrix.offscreen_canvas();
+        let pixel_count = (config.render_width * config.render_height) as usize;
+        let led_pixel_scratch = vec![matrix_ffi::MatrixRgb::default(); pixel_count];
 
         commands.insert_resource(MatrixResource {
             matrix,
             offscreen_canvas: Some(offscreen_canvas),
+            led_pixel_scratch,
         });
         println!("LED matrix initialized");
     }
@@ -264,7 +272,10 @@ fn setup_render_target(
             camera.target = RenderTarget::Image(render_target_handle.clone().into());
         }
         Err(e) => {
-            eprintln!("ERROR: Failed to find MatrixCamera for render target: {:?}", e);
+            eprintln!(
+                "ERROR: Failed to find MatrixCamera for render target: {:?}",
+                e
+            );
         }
     }
 
@@ -383,8 +394,7 @@ impl render_graph::Node for ImageCopyDriver {
             let block_size = src_image.texture_format.block_copy_size(None).unwrap();
 
             let padded_bytes_per_row = RenderDevice::align_copy_bytes_per_row(
-                (src_image.size.width as usize / block_dimensions.0 as usize)
-                    * block_size as usize,
+                (src_image.size.width as usize / block_dimensions.0 as usize) * block_size as usize,
             );
 
             encoder.copy_texture_to_buffer(
@@ -439,8 +449,8 @@ fn receive_image_from_buffer(
             .expect("Failed to poll device");
 
         r.recv().expect("Failed to receive map_async message");
-
-        let _ = sender.send(buffer_slice.get_mapped_range().to_vec());
+        let mapped = buffer_slice.get_mapped_range().to_vec();
+        let _ = sender.send(mapped);
 
         image_copier.buffer.unmap();
     }
@@ -491,36 +501,41 @@ fn receive_and_display_frame(
 
     #[cfg(all(target_os = "linux", feature = "matrix"))]
     {
-        use rpi_led_matrix::LedColor;
-
         let pwm_bits = config.pwm_bits;
 
-        if let Some(mut canvas) = matrix_res.offscreen_canvas.take() {
+        if let Some(canvas) = matrix_res.offscreen_canvas.take() {
+            let need = width * height;
+            if matrix_res.led_pixel_scratch.len() != need {
+                matrix_res
+                    .led_pixel_scratch
+                    .resize(need, matrix_ffi::MatrixRgb::default());
+            }
+
             for y in 0..height {
                 for x in 0..width {
                     let pixel_idx = (y * width + x) * 4;
+                    let out_idx = y * width + x;
 
                     if pixel_idx + 3 <= frame_buffer.data.len() {
                         let r = dither_channel(frame_buffer.data[pixel_idx], x, y, pwm_bits);
-                        let g =
-                            dither_channel(frame_buffer.data[pixel_idx + 1], x, y, pwm_bits);
-                        let b =
-                            dither_channel(frame_buffer.data[pixel_idx + 2], x, y, pwm_bits);
+                        let g = dither_channel(frame_buffer.data[pixel_idx + 1], x, y, pwm_bits);
+                        let b = dither_channel(frame_buffer.data[pixel_idx + 2], x, y, pwm_bits);
 
-                        canvas.set(
-                            x as i32,
-                            y as i32,
-                            &LedColor {
-                                red: r,
-                                green: g,
-                                blue: b,
-                            },
-                        );
+                        matrix_res.led_pixel_scratch[out_idx] = matrix_ffi::MatrixRgb { r, g, b };
                     }
                 }
             }
 
-            matrix_res.offscreen_canvas = Some(matrix_res.matrix.swap(canvas));
+            matrix_ffi::canvas_set_pixels_bulk(
+                &canvas,
+                0,
+                0,
+                width as i32,
+                height as i32,
+                &matrix_res.led_pixel_scratch[..need],
+            );
+            let next_canvas = matrix_res.matrix.swap(canvas);
+            matrix_res.offscreen_canvas = Some(next_canvas);
         }
 
         if frame_num < 10 || frame_num % 300 == 0 {

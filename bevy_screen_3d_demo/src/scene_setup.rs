@@ -38,14 +38,14 @@ fn setup_3d_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // Red cube at origin with rotation marker
+
     let material = StandardMaterial {
-        base_color: Color::srgb(0.0,1.0, 0.0), // Red
+        base_color: Color::srgb(0.0, 1.0, 1.0),
         ..Default::default()
     };
 
     commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(4.0, 4.0, 4.0))),
+        Mesh3d(meshes.add(Cuboid::new(8.0, 6.0, 10.0))),
         MeshMaterial3d(materials.add(material)),
         Transform::from_xyz(0.0, 0.0, 0.0),
         RotatingCube,
@@ -75,6 +75,6 @@ fn setup_3d_scene(
 /// Rotate the cube at 90 degrees per second on Y axis
 fn rotate_cube(time: Res<Time>, mut query: Query<&mut Transform, With<RotatingCube>>) {
     for mut transform in &mut query {
-        transform.rotate_y(time.delta_secs() * 0.57);
+        transform.rotate_y(time.delta_secs() * 1.0);
     }
 }

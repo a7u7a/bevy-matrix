@@ -65,6 +65,6 @@ fn update_time(
     mut materials: ResMut<Assets<FragShaderMaterial>>,
 ) {
     if let Some(material) = materials.get_mut(&handle.0) {
-        material.time = time.elapsed_secs() / 5.0;
+        material.time = time.elapsed_secs() / 3.0;
     }
 }

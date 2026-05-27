@@ -9,6 +9,7 @@ use bevy::color::Color;
 use bevy::ecs::component::Component;
 use bevy::ecs::query::With;
 use bevy::ecs::system::{Commands, Query, Res, ResMut};
+use bevy::math::curve::{Curve, EaseFunction, EasingCurve};
 use bevy::math::Vec3;
 use bevy::prelude::{Camera, Camera3d, Cuboid, Mesh, Mesh3d, MeshMaterial3d, PointLight};
 use crate::uv_material::{UvMaterial, UvMaterialPlugin};
@@ -28,7 +29,7 @@ impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(UvMaterialPlugin);
         app.add_systems(Startup, setup_3d_scene);
-        app.add_systems(Update, rotate_cube);
+        app.add_systems(Update, (rotate_cube, animate_cube_scale));
     }
 }
 
@@ -40,9 +41,9 @@ fn setup_3d_scene(
     mut materials: ResMut<Assets<UvMaterial>>,
 ) {
     commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(8.0, 6.0, 10.0))),
+        Mesh3d(meshes.add(Cuboid::new(3.0, 2.0, 3.5))),
         MeshMaterial3d(materials.add(UvMaterial {})),
-        Transform::from_xyz(0.0, 0.0, 0.0),
+        Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::new(1.0, 1.0, 1.0)),
         RotatingCube,
     ));
 
@@ -67,9 +68,27 @@ fn setup_3d_scene(
     ));
 }
 
+const SCALE_PERIOD_SECS: f32 = 1.0;
+const SCALE_X_MIN: f32 = 1.0;
+const SCALE_X_MAX: f32 = 2.0;
+
 /// Rotate the cube at 90 degrees per second on Y axis
 fn rotate_cube(time: Res<Time>, mut query: Query<&mut Transform, With<RotatingCube>>) {
     for mut transform in &mut query {
         transform.rotate_y(time.delta_secs() * 1.0);
+    }
+}
+
+/// Oscillate local X scale between 1.0 and 2.0 over a 1-second ping-pong cycle
+fn animate_cube_scale(time: Res<Time>, mut query: Query<&mut Transform, With<RotatingCube>>) {
+    let t = time.elapsed_secs() % SCALE_PERIOD_SECS;
+    let linear = if t < 0.5 { t * 2.0 } else { 2.0 - t * 2.0 };
+    let eased = EaseFunction::CubicInOut.sample_clamped(linear);
+    let scale_x = EasingCurve::new(SCALE_X_MIN, SCALE_X_MAX, EaseFunction::Linear)
+        .sample(eased)
+        .unwrap_or(SCALE_X_MIN);
+
+    for mut transform in &mut query {
+        transform.scale = Vec3::new(scale_x, 1.0, 1.0);
     }
 }

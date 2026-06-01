@@ -15,7 +15,7 @@ use bevy::math::Vec3;
 use bevy::prelude::{Camera, Camera3d, Cuboid, Mesh, Mesh3d, MeshMaterial3d, PointLight};
 use bevy::time::Time;
 use bevy::transform::components::Transform;
-use matrix_render::MatrixCamera;
+use bevy_rgb_matrix::MatrixCamera;
 
 /// Marker component for the rotating cube
 #[derive(Component)]

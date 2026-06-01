@@ -9,7 +9,7 @@ use bevy::shader::ShaderRef;
 use bevy::sprite_render::{Material2d, Material2dPlugin, MeshMaterial2d};
 use bevy::time::Time;
 use bevy::transform::components::Transform;
-use matrix_render::MatrixCamera;
+use bevy_rgb_matrix::MatrixCamera;
 
 pub const RENDER_WIDTH: u32 = 64;
 pub const RENDER_HEIGHT: u32 = 64;

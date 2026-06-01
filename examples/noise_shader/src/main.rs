@@ -18,7 +18,7 @@ use bevy::window::{ExitCondition, WindowPlugin};
 use std::time::Duration;
 
 #[cfg(not(feature = "window"))]
-use matrix_render::{MatrixConfig, MatrixRenderPlugin};
+use bevy_rgb_matrix::{MatrixConfig, MatrixRenderPlugin};
 
 #[cfg(not(feature = "window"))]
 const TARGET_FPS: u64 = 60;

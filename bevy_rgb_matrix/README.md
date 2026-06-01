@@ -1,4 +1,4 @@
-# matrix_render
+# bevy_rgb_matrix
 
 Bevy plugin that renders a marked camera to a GPU framebuffer, copies pixels to the CPU, and (with the `matrix` feature on Linux) drives an RGB LED panel through [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix).
 
@@ -16,7 +16,7 @@ Bevy plugin that renders a marked camera to a GPU framebuffer, copies pixels to 
 1. Add the dependency with the `matrix` feature:
 
 ```toml
-matrix_render = { version = "0.1", features = ["matrix"] }
+bevy_rgb_matrix = { version = "0.1", features = ["matrix"] }
 ```
 
 2. Configure a headless Bevy app (no window) with rendering enabled. You need `RenderPlugin`, a scene, and a fixed timestep. See the [rotating_3d_cube](https://github.com/a7u7a/rpi-wgpu/tree/main/examples/rotating_3d_cube) example in this repo.
@@ -24,7 +24,7 @@ matrix_render = { version = "0.1", features = ["matrix"] }
 3. Mark exactly one camera with `MatrixCamera` and add the plugin:
 
 ```rust
-use matrix_render::{MatrixCamera, MatrixConfig, MatrixRenderPlugin};
+use bevy_rgb_matrix::{MatrixCamera, MatrixConfig, MatrixRenderPlugin};
 
 app.add_plugins(MatrixRenderPlugin {
     config: MatrixConfig::default(),
@@ -78,8 +78,8 @@ Full Bevy apps live in the parent repository:
 From the workspace root:
 
 ```bash
-cargo publish -p matrix_render --dry-run
-cargo publish -p matrix_render
+cargo publish -p bevy_rgb_matrix --dry-run
+cargo publish -p bevy_rgb_matrix
 ```
 
 Example crates in `examples/` are `publish = false` and are not uploaded.

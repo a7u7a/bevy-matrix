@@ -11,7 +11,7 @@ bevy = { workspace = true, features = [
     "zstd_rust",
 ] }
 crossbeam-channel = { workspace = true }
-matrix_render = { version = "0.1", path = "../../matrix_render" }
+bevy_rgb_matrix = { version = "0.1", path = "../../bevy_rgb_matrix" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rpi-led-matrix = { version = "0.2", optional = true }
@@ -26,7 +26,7 @@ window = [
     "bevy/x11",
 ]
 matrix = [
-    "matrix_render/matrix",
+    "bevy_rgb_matrix/matrix",
     "rpi-led-matrix",
     "bevy/multi_threaded",
     "bevy/bevy_render",

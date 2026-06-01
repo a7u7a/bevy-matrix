@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "matrix_render",
+    "bevy_rgb_matrix",
     "examples/blink",
     "examples/rotating_3d_cube",
     "examples/noise_shader",

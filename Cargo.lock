@@ -957,6 +957,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_rgb_matrix"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "crossbeam-channel",
+ "rpi-led-matrix",
+]
+
+[[package]]
 name = "bevy_scene"
 version = "0.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2326,15 +2335,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "matrix_render"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "crossbeam-channel",
- "rpi-led-matrix",
-]
-
-[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2345,8 +2345,8 @@ name = "metaballs_shader"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_rgb_matrix",
  "crossbeam-channel",
- "matrix_render",
  "rpi-led-matrix",
 ]
 
@@ -2476,8 +2476,8 @@ name = "noise_shader"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_rgb_matrix",
  "crossbeam-channel",
- "matrix_render",
  "rpi-led-matrix",
 ]
 
@@ -3144,8 +3144,8 @@ name = "rotating_3d_cube"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_rgb_matrix",
  "crossbeam-channel",
- "matrix_render",
  "rpi-led-matrix",
 ]
 

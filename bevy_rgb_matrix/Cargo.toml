@@ -1,5 +1,5 @@
 [package]
-name = "matrix_render"
+name = "bevy_rgb_matrix"
 version = "0.1.0"
 edition = "2021"
 description = "Bevy plugin that renders a camera to an RGB LED matrix via rpi-rgb-led-matrix"
@@ -7,7 +7,7 @@ readme = "README.md"
 license = "MIT"
 repository = "https://github.com/a7u7a/rpi-wgpu"
 homepage = "https://github.com/a7u7a/rpi-wgpu"
-documentation = "https://docs.rs/matrix_render"
+documentation = "https://docs.rs/bevy_rgb_matrix"
 keywords = ["bevy", "led-matrix", "raspberry-pi", "embedded", "wgpu"]
 categories = ["game-development", "rendering::graphics-api"]
 rust-version = "1.85"

@@ -4,16 +4,16 @@ Fuses together `bevy` and `rpi-led-matrix` to render real time graphics to the s
 
 ## Crate
 
-The reusable Bevy plugin lives in [`matrix_render/`](matrix_render/). After publishing:
+The reusable Bevy plugin lives in [`bevy_rgb_matrix/`](bevy_rgb_matrix/). After publishing:
 
-- [crates.io/crates/matrix_render](https://crates.io/crates/matrix_render)
-- [docs.rs/matrix_render](https://docs.rs/matrix_render)
+- [crates.io/crates/bevy_rgb_matrix](https://crates.io/crates/bevy_rgb_matrix)
+- [docs.rs/bevy_rgb_matrix](https://docs.rs/bevy_rgb_matrix)
 
 Publish from the workspace root (examples are not uploaded):
 
 ```bash
-cargo publish -p matrix_render --dry-run
-cargo publish -p matrix_render
+cargo publish -p bevy_rgb_matrix --dry-run
+cargo publish -p bevy_rgb_matrix
 ```
 
 - Supports running in headless mode

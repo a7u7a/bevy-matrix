@@ -238,7 +238,7 @@ fn initialize_matrix(mut commands: Commands, config: Res<MatrixConfig>) {
             (None, None) => (config.render_height, config.render_width),
             _ => {
                 eprintln!(
-                    "matrix_render: panel_rows and panel_cols must both be set or both unset; using render size as panel size"
+                    "bevy_rgb_matrix: panel_rows and panel_cols must both be set or both unset; using render size as panel size"
                 );
                 (config.render_height, config.render_width)
             }
@@ -324,7 +324,7 @@ fn setup_render_target(
             camera.target = RenderTarget::Image(render_target_handle.clone().into());
         }
         Err(e) => {
-            eprintln!("matrix_render: failed to find exactly one MatrixCamera: {e:?}");
+            eprintln!("bevy_rgb_matrix: failed to find exactly one MatrixCamera: {e:?}");
         }
     }
 
@@ -593,14 +593,14 @@ fn receive_and_display_frame(
                 frame_buffer.data[center + 1],
                 frame_buffer.data[center + 2],
             );
-            println!("matrix_render: frame {frame_num} (center pixel: r={cr} g={cg} b={cb})");
+            println!("bevy_rgb_matrix: frame {frame_num} (center pixel: r={cr} g={cg} b={cb})");
         }
     }
 
     #[cfg(not(all(target_os = "linux", feature = "matrix")))]
     if config.verbose && (frame_num < 10 || frame_num % 300 == 0) {
         println!(
-            "matrix_render: frame {frame_num} processed ({} bytes)",
+            "bevy_rgb_matrix: frame {frame_num} processed ({} bytes)",
             image_data.len()
         );
     }

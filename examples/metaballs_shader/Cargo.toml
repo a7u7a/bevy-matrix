@@ -2,6 +2,7 @@
 name = "metaballs_shader"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 bevy = { workspace = true, features = [
@@ -10,7 +11,7 @@ bevy = { workspace = true, features = [
     "zstd_rust",
 ] }
 crossbeam-channel = { workspace = true }
-matrix_render = { path = "../../matrix_render" }
+matrix_render = { version = "0.1", path = "../../matrix_render" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rpi-led-matrix = { version = "0.2", optional = true }

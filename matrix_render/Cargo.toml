@@ -2,6 +2,19 @@
 name = "matrix_render"
 version = "0.1.0"
 edition = "2021"
+description = "Bevy plugin that renders a camera to an RGB LED matrix via rpi-rgb-led-matrix"
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/a7u7a/rpi-wgpu"
+homepage = "https://github.com/a7u7a/rpi-wgpu"
+documentation = "https://docs.rs/matrix_render"
+keywords = ["bevy", "led-matrix", "raspberry-pi", "embedded", "wgpu"]
+categories = ["game-development", "rendering::graphics-api"]
+rust-version = "1.85"
+
+[package.metadata.docs.rs]
+all-features = false
+features = []
 
 [dependencies]
 bevy = { workspace = true, features = [
@@ -22,4 +35,5 @@ crossbeam-channel = { workspace = true }
 rpi-led-matrix = { version = "0.2", optional = true }
 
 [features]
-matrix = ["rpi-led-matrix"]
+default = []
+matrix = ["dep:rpi-led-matrix"]

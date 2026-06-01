@@ -8,8 +8,8 @@ use bevy::app::App;
 use bevy::DefaultPlugins;
 
 // Shared modules (both platforms)
-mod uv_material;
 mod scene_setup;
+mod uv_material;
 use scene_setup::ScenePlugin;
 
 // Headless mode plugins

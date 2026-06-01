@@ -1,8 +1,21 @@
-// Shared matrix rendering module for headless mode (Raspberry Pi)
-// Handles GPU render target setup, GPU->CPU copy, and LED matrix display.
-//
-// Usage: add `MatrixCamera` marker to the camera you want rendered,
-// then add `MatrixRenderPlugin { config: MatrixConfig { .. } }`.
+//! Render a Bevy camera to an RGB LED matrix (or CPU framebuffer only).
+//!
+//! # Setup
+//!
+//! 1. Enable Bevy rendering (`RenderPlugin`, meshes, cameras, etc.).
+//! 2. For headless Pi use: no primary window, [`ScheduleRunnerPlugin`] with a fixed timestep,
+//!    and `ExitCondition::DontExit` on [`WindowPlugin`].
+//! 3. Add [`MatrixRenderPlugin`] with a [`MatrixConfig`].
+//! 4. Spawn **exactly one** [`Camera`] with [`MatrixCamera`].
+//!
+//! With the `matrix` feature on Linux, frames are dithered and sent to the panel via
+//! [rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix). Without `matrix`, GPU
+//! readback still runs (useful for development on non-Pi machines).
+//!
+//! [`ScheduleRunnerPlugin`]: bevy::app::ScheduleRunnerPlugin
+//! [`WindowPlugin`]: bevy::window::WindowPlugin
+
+#![warn(missing_docs)]
 
 use bevy::app::{App, Plugin, PostStartup, PostUpdate};
 use bevy::asset::{Assets, Handle};
@@ -34,12 +47,14 @@ use std::sync::{
 // Public API
 // ============================================================================
 
-/// Marker component for the camera that should render to the LED matrix.
-/// Attach this to your camera entity in your scene setup.
+/// Marker on the single camera that renders to the LED matrix framebuffer.
+///
+/// The plugin assigns that camera's [`RenderTarget`] to an internal GPU image matching
+/// [`MatrixConfig::render_width`] and [`MatrixConfig::render_height`].
 #[derive(Component)]
 pub struct MatrixCamera;
 
-/// Per-example hardware/render configuration.
+/// Hardware and render settings for [`MatrixRenderPlugin`].
 ///
 /// `render_width` / `render_height` define the GPU framebuffer and logical canvas size.
 ///
@@ -47,9 +62,14 @@ pub struct MatrixCamera;
 /// `panel_cols` are **per physical panel** (`--led-rows`, `--led-cols`). When both are
 /// `None`, they default to `(render_height, render_width)` (single panel matching the render
 /// target). Set them explicitly when using `chain_length` or `parallel` greater than 1.
+///
+/// `hardware_mapping` is passed to `--led-hardware-mapping` (see the
+/// [hardware mapping list](https://github.com/hzeller/rpi-rgb-led-matrix#types-of-displays)).
 #[derive(Clone, Debug, Resource)]
 pub struct MatrixConfig {
+    /// GPU framebuffer width in pixels.
     pub render_width: u32,
+    /// GPU framebuffer height in pixels.
     pub render_height: u32,
     /// Per-panel row count for the LED driver. `None` → use `render_height`.
     pub panel_rows: Option<u32>,
@@ -62,10 +82,22 @@ pub struct MatrixConfig {
     /// GPIO slowdown factor (`--led-gpio-slowdown`). Higher values help signal integrity on
     /// faster Pis or with long cables; try 1–4 to match a working hzeller demo.
     pub gpio_slowdown: u32,
+    /// Panel brightness 1–100 (`--led-brightness`).
     pub brightness: u8,
+    /// PWM bit depth (`--led-pwm-bits`).
     pub pwm_bits: u32,
+    /// PWM LSB nanoseconds (`--led-pwm-lsb-nanoseconds`).
     pub pwm_lsb_nanoseconds: u32,
+    /// Optional PWM dither bits (`--led-pwm-dither-bits`).
     pub pwm_dither_bits: Option<u32>,
+    /// `--led-hardware-mapping` string (e.g. `adafruit-hat-pwm`, `regular`).
+    pub hardware_mapping: String,
+    /// `--led-hardware-pulsing` (offload OE timing to hardware PWM when supported).
+    pub hardware_pulsing: bool,
+    /// Print measured refresh rate from the driver when supported.
+    pub show_refresh_rate: bool,
+    /// Log initialization and periodic frame stats to stdout.
+    pub verbose: bool,
 }
 
 impl Default for MatrixConfig {
@@ -82,12 +114,20 @@ impl Default for MatrixConfig {
             pwm_bits: 7,
             pwm_lsb_nanoseconds: 200,
             pwm_dither_bits: None,
+            hardware_mapping: "adafruit-hat-pwm".to_string(),
+            hardware_pulsing: true,
+            show_refresh_rate: true,
+            verbose: false,
         }
     }
 }
 
-/// Plugin for GPU rendering to LED matrix in headless mode.
+/// Bevy plugin: GPU render target, readback, and optional LED matrix output.
+///
+/// Requires a running render sub-app (e.g. `RenderPlugin`) and one entity with
+/// [`MatrixCamera`] + [`Camera`].
 pub struct MatrixRenderPlugin {
+    /// Copied into a [`MatrixConfig`] resource at startup.
     pub config: MatrixConfig,
 }
 
@@ -109,6 +149,12 @@ impl Plugin for MatrixRenderPlugin {
 
         app.add_plugins(ImageCopyPlugin);
         app.add_systems(PostUpdate, receive_and_display_frame);
+    }
+}
+
+fn log_verbose(config: &MatrixConfig, args: std::fmt::Arguments<'_>) {
+    if config.verbose {
+        println!("{args}");
     }
 }
 
@@ -148,12 +194,14 @@ mod matrix_ffi;
 #[cfg(all(target_os = "linux", feature = "matrix"))]
 use rpi_led_matrix::{LedCanvas, LedMatrix, LedMatrixOptions, LedRuntimeOptions};
 
+/// Live LED matrix handle and offscreen canvas (feature `matrix` on Linux only).
 #[cfg(all(target_os = "linux", feature = "matrix"))]
 #[derive(Resource)]
 pub struct MatrixResource {
+    /// Underlying `rpi-led-matrix` driver instance.
     pub matrix: LedMatrix,
+    /// Offscreen canvas used for double-buffered uploads.
     pub offscreen_canvas: Option<LedCanvas>,
-    /// Packed RGB row-major buffer for bulk `led_canvas_set_pixels` (render_width × render_height).
     led_pixel_scratch: Vec<matrix_ffi::MatrixRgb>,
 }
 
@@ -196,15 +244,19 @@ fn initialize_matrix(mut commands: Commands, config: Res<MatrixConfig>) {
             }
         };
 
-        println!(
-            "Initializing LED matrix: render {}×{}, panel {} rows × {} cols, chain={}, parallel={}, gpio_slowdown={}...",
-            config.render_width,
-            config.render_height,
-            panel_rows,
-            panel_cols,
-            config.chain_length,
-            config.parallel,
-            config.gpio_slowdown,
+        log_verbose(
+            &config,
+            format_args!(
+                "Initializing LED matrix: render {}×{}, panel {} rows × {} cols, chain={}, parallel={}, gpio_slowdown={}, mapping={}...",
+                config.render_width,
+                config.render_height,
+                panel_rows,
+                panel_cols,
+                config.chain_length,
+                config.parallel,
+                config.gpio_slowdown,
+                config.hardware_mapping,
+            ),
         );
 
         let mut options = LedMatrixOptions::new();
@@ -212,9 +264,9 @@ fn initialize_matrix(mut commands: Commands, config: Res<MatrixConfig>) {
         options.set_cols(panel_cols);
         options.set_chain_length(config.chain_length);
         options.set_parallel(config.parallel);
-        options.set_hardware_mapping("adafruit-hat-pwm");
-        options.set_hardware_pulsing(true);
-        options.set_refresh_rate(true);
+        options.set_hardware_mapping(&config.hardware_mapping);
+        options.set_hardware_pulsing(config.hardware_pulsing);
+        options.set_refresh_rate(config.show_refresh_rate);
 
         let _ = options.set_pwm_lsb_nanoseconds(config.pwm_lsb_nanoseconds);
         let _ = options.set_pwm_bits(config.pwm_bits as u8);
@@ -237,7 +289,7 @@ fn initialize_matrix(mut commands: Commands, config: Res<MatrixConfig>) {
             offscreen_canvas: Some(offscreen_canvas),
             led_pixel_scratch,
         });
-        println!("LED matrix initialized");
+        log_verbose(&config, format_args!("LED matrix initialized"));
     }
 }
 
@@ -272,17 +324,17 @@ fn setup_render_target(
             camera.target = RenderTarget::Image(render_target_handle.clone().into());
         }
         Err(e) => {
-            eprintln!(
-                "ERROR: Failed to find MatrixCamera for render target: {:?}",
-                e
-            );
+            eprintln!("matrix_render: failed to find exactly one MatrixCamera: {e:?}");
         }
     }
 
     commands.spawn(ImageCopier::new(render_target_handle, size, &render_device));
-    println!(
-        "GPU render target initialized ({}x{})",
-        config.render_width, config.render_height
+    log_verbose(
+        &config,
+        format_args!(
+            "GPU render target initialized ({}x{})",
+            config.render_width, config.render_height
+        ),
     );
 }
 
@@ -324,11 +376,7 @@ struct ImageCopier {
 }
 
 impl ImageCopier {
-    pub fn new(
-        src_image: Handle<Image>,
-        size: Extent3d,
-        render_device: &RenderDevice,
-    ) -> ImageCopier {
+    fn new(src_image: Handle<Image>, size: Extent3d, render_device: &RenderDevice) -> ImageCopier {
         let unpadded_bytes_per_row = size.width as usize * 4;
         let padded_bytes_per_row = RenderDevice::align_copy_bytes_per_row(unpadded_bytes_per_row);
 
@@ -347,7 +395,7 @@ impl ImageCopier {
         }
     }
 
-    pub fn enabled(&self) -> bool {
+    fn enabled(&self) -> bool {
         self.enabled.load(Ordering::Relaxed)
     }
 }
@@ -538,24 +586,22 @@ fn receive_and_display_frame(
             matrix_res.offscreen_canvas = Some(next_canvas);
         }
 
-        if frame_num < 10 || frame_num % 300 == 0 {
+        if config.verbose && (frame_num < 10 || frame_num % 300 == 0) {
             let center = (height / 2 * width + width / 2) * 4;
             let (cr, cg, cb) = (
                 frame_buffer.data[center],
                 frame_buffer.data[center + 1],
                 frame_buffer.data[center + 2],
             );
-            println!(
-                "Frame {} displayed (center pixel: r={} g={} b={})",
-                frame_num, cr, cg, cb
-            );
+            println!("matrix_render: frame {frame_num} (center pixel: r={cr} g={cg} b={cb})");
         }
     }
 
     #[cfg(not(all(target_os = "linux", feature = "matrix")))]
-    {
-        if frame_num < 10 || frame_num % 300 == 0 {
-            println!("Frame {} processed ({} bytes)", frame_num, image_data.len());
-        }
+    if config.verbose && (frame_num < 10 || frame_num % 300 == 0) {
+        println!(
+            "matrix_render: frame {frame_num} processed ({} bytes)",
+            image_data.len()
+        );
     }
 }

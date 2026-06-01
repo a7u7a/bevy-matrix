@@ -2,6 +2,7 @@
 // This module contains the platform-agnostic scene configuration that will render
 // to a window on Mac and to the LED matrix on Pi
 
+use crate::uv_material::{UvMaterial, UvMaterialPlugin};
 use bevy::app::{App, Plugin, Startup, Update};
 use bevy::asset::Assets;
 use bevy::camera::ClearColorConfig;
@@ -12,7 +13,6 @@ use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::math::curve::{Curve, EaseFunction, EasingCurve};
 use bevy::math::Vec3;
 use bevy::prelude::{Camera, Camera3d, Cuboid, Mesh, Mesh3d, MeshMaterial3d, PointLight};
-use crate::uv_material::{UvMaterial, UvMaterialPlugin};
 use bevy::time::Time;
 use bevy::transform::components::Transform;
 use matrix_render::MatrixCamera;

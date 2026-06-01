@@ -2,6 +2,20 @@
 
 Fuses together `bevy` and `rpi-led-matrix` to render real time graphics to the screen using a Raspberry Pi.
 
+## Crate
+
+The reusable Bevy plugin lives in [`matrix_render/`](matrix_render/). After publishing:
+
+- [crates.io/crates/matrix_render](https://crates.io/crates/matrix_render)
+- [docs.rs/matrix_render](https://docs.rs/matrix_render)
+
+Publish from the workspace root (examples are not uploaded):
+
+```bash
+cargo publish -p matrix_render --dry-run
+cargo publish -p matrix_render
+```
+
 - Supports running in headless mode
 - Run WebGPU shaders and full 3D scenes at 60fps on low-end hardware (Raspberry Pi Zero W 2)
 - Away from your LED-Matrix? Run the exact same scene in your laptop!

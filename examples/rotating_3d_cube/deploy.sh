@@ -1,12 +1,11 @@
 #!/bin/bash
-# Build from workspace root: Cargo places artifacts in ../target/, not ./target/
-HOST=vika@192.168.2.188
-CRATE="bevy_screen_frag_chain_demo"
+HOST=ayu@pi.local
+CRATE="rotating_3d_cube"
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 echo "Building for Raspberry Pi..."
 cd "$WORKSPACE_ROOT"

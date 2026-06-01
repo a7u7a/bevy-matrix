@@ -978,54 +978,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bevy_screen_3d_demo"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "crossbeam-channel",
- "matrix_render",
- "rpi-led-matrix",
-]
-
-[[package]]
-name = "bevy_screen_demo"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "rpi-led-matrix",
-]
-
-[[package]]
-name = "bevy_screen_frag_chain_demo"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "crossbeam-channel",
- "matrix_render",
- "rpi-led-matrix",
-]
-
-[[package]]
-name = "bevy_screen_frag_shader_demo"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "crossbeam-channel",
- "matrix_render",
- "rpi-led-matrix",
-]
-
-[[package]]
-name = "bevy_screen_metaballs_demo"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "crossbeam-channel",
- "matrix_render",
- "rpi-led-matrix",
-]
-
-[[package]]
 name = "bevy_shader"
 version = "0.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1275,6 +1227,14 @@ dependencies = [
  "cfg-if",
  "constant_time_eq",
  "cpufeatures",
+]
+
+[[package]]
+name = "blink"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "rpi-led-matrix",
 ]
 
 [[package]]
@@ -2381,6 +2341,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "metaballs_shader"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "crossbeam-channel",
+ "matrix_render",
+ "rpi-led-matrix",
+]
+
+[[package]]
 name = "metal"
 version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2499,6 +2469,16 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "libc",
+]
+
+[[package]]
+name = "noise_shader"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "crossbeam-channel",
+ "matrix_render",
+ "rpi-led-matrix",
 ]
 
 [[package]]
@@ -3157,6 +3137,16 @@ dependencies = [
  "serde",
  "serde_derive",
  "unicode-ident",
+]
+
+[[package]]
+name = "rotating_3d_cube"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "crossbeam-channel",
+ "matrix_render",
+ "rpi-led-matrix",
 ]
 
 [[package]]

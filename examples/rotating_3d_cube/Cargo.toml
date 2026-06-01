@@ -1,5 +1,5 @@
 [package]
-name = "bevy_screen_frag_chain_demo"
+name = "rotating_3d_cube"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,7 +10,7 @@ bevy = { workspace = true, features = [
     "zstd_rust",
 ] }
 crossbeam-channel = { workspace = true }
-matrix_render = { path = "../matrix_render" }
+matrix_render = { path = "../../matrix_render" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rpi-led-matrix = { version = "0.2", optional = true }
@@ -20,21 +20,26 @@ default = ["window"]
 window = [
     "bevy/bevy_winit",
     "bevy/bevy_render",
-    "bevy/bevy_sprite",
-    "bevy/bevy_sprite_render",
+    "bevy/bevy_pbr",
+    "bevy/tonemapping_luts",  # Required for proper PBR color rendering
     "bevy/x11",
+    "bevy/png",
 ]
 matrix = [
     "matrix_render/matrix",
     "rpi-led-matrix",
     "bevy/multi_threaded",
     "bevy/bevy_render",
-    "bevy/bevy_sprite",
-    "bevy/bevy_sprite_render",
+    "bevy/bevy_pbr",
+    "bevy/bevy_scene",
     "bevy/bevy_camera",
+    "bevy/bevy_light",
     "bevy/bevy_mesh",
     "bevy/bevy_image",
     "bevy/bevy_shader",
     "bevy/bevy_color",
     "bevy/bevy_window",
+    "bevy/png",
+    "bevy/tonemapping_luts",
 ]
+

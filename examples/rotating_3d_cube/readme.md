@@ -3,12 +3,12 @@
 Compile on the Mac and send to Pi:
 
 ```bash
-cd bevy_screen_3d_demo
+cd examples/rotating_3d_cube
 ./deploy.sh
 ```
 
 On Pi
 
 ```bash
-sudo ./bevy_screen_3d_demo
+sudo ./rotating_3d_cube
 ```

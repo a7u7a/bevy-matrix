@@ -3,18 +3,18 @@
 Implemented using the (screen quad approach)[https://www.cginternals.com/en/blog/2018-01-10-screen-aligned-quads-and-triangles.html].
 
 
-Edit the [`frag_shader.wgsl`](/bevy_screen_frag_shader_demo/src/frag_shader.wgsl) to create custom shaders that run to the screen.
+Edit the [`frag_shader.wgsl`](/examples/noise_shader/src/frag_shader.wgsl) to create custom shaders that run to the screen.
 
 
 Compile on the Mac and send to Pi:
 
 ```bash
-cd bevy_screen_frag_shader_demo
+cd examples/noise_shader
 ./deploy.sh
 ```
 
 On Pi
 
 ```bash
-sudo ./bevy_screen_frag_shader_demo
+sudo ./noise_shader
 ```

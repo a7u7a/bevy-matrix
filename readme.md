@@ -1,37 +1,28 @@
-# Render bevy scenes to a LED matrix display
+# Render your Bevy scenes to an LED matrix display [WIP]
 
-Fuses together `bevy` and `rpi-led-matrix` to render real time graphics to the screen using a Raspberry Pi.
+TODO: Insert gif of running example(?)
 
-## Crate
+Fuses [`rpi-led-matrix`](https://crates.io/crates/rpi-led-matrix) together with the Rust-based [`bevy`](https://github.com/bevyengine/bevy/tree/main) game engine to render real-time graphics on a LED matrix display.
+As some Pi's are unable to build a Bevy game (not enough ram in the case of the Raspberry Pi Zero W 2) the current setup assumes you will compile the Bevy code on your own machine and then transfer it to the Pi.
 
-The reusable Bevy plugin lives in [`bevy_rgb_matrix/`](bevy_rgb_matrix/). After publishing:
-
-- [crates.io/crates/bevy_rgb_matrix](https://crates.io/crates/bevy_rgb_matrix)
-- [docs.rs/bevy_rgb_matrix](https://docs.rs/bevy_rgb_matrix)
-
-Publish from the workspace root (examples are not uploaded):
-
-```bash
-cargo publish -p bevy_rgb_matrix --dry-run
-cargo publish -p bevy_rgb_matrix
-```
-
+Features:
 - Supports running in headless mode
 - Run WebGPU shaders and full 3D scenes at 60fps on low-end hardware (Raspberry Pi Zero W 2)
 - Away from your LED-Matrix? Run the exact same scene in your laptop!
 - Includes MacOS -> raspberry pi cross-compilation examples
 - Multi-panel support
 
-## Pending
+## Dev setup
+
+(Upcoming: The specific hardware setup used for development)
+
+## To-do
 
 - Make example that uses chained panels
 - Make a stress test example
+- Cross-compile setup script
 
-## Performance
-
-(Upcoming)
-
-## Build gallery
+## Performance notes
 
 (Upcoming)
 
@@ -46,7 +37,9 @@ Each example is a Bevy project under [`examples/`](examples/):
 
 ## Setup
 
-### Running examples on Mac
+### Running examples 
+
+(Only tested on MacOS but should run in Linux/Windows too)
 
 Navigate to an example folder (e.g. `cd examples/blink`) and run:
 

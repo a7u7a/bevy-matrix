@@ -1,6 +1,4 @@
-# Render your Bevy scenes to an LED matrix display [WIP]
-
-TODO: Insert gif of running example(?)
+# Render Bevy scenes to an LED matrix display [WIP]
 
 Fuses [`rpi-led-matrix`](https://crates.io/crates/rpi-led-matrix) together with the Rust-based [`bevy`](https://github.com/bevyengine/bevy/tree/main) game engine to render real-time graphics on a LED matrix display.
 As some Pi's are unable to build a Bevy game (not enough ram in the case of the Raspberry Pi Zero W 2) the current setup assumes you will compile the Bevy code on your own machine and then transfer it to the Pi.
@@ -14,7 +12,12 @@ Features:
 
 ## Dev setup
 
-(Upcoming: The specific hardware setup used for development)
+Raspberry Pi Zero W 2 + Adafruit RGB Matrix Bonnet for Raspberry Pi
+
+![Metaballs](docs/metaballs.gif)
+
+![Cube](docs/3d.gif)
+
 
 ## To-do
 

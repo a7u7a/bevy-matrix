@@ -7,7 +7,7 @@
 > Setup instructions should be quite generic if you've ever worked with hzeller's library.
 
 Fuses [`rpi-led-matrix`](https://crates.io/crates/rpi-led-matrix) together with the Rust-based [`bevy`](https://github.com/bevyengine/bevy/tree/main) game engine to render real-time graphics on a LED matrix display.
-As some Pi's are unable to build a Bevy game (not enough ram in the case of the Raspberry Pi Zero W 2) the current setup assumes you will compile the Bevy code on your own machine and then transfer it to the Pi.
+The current deployment setup assumes you will compile the Bevy code on your own machine and then transfer it to the Pi. As some Pi's just dont have enough memory to run the Rust compiler.
 
 Features:
 - Supports running in headless mode
@@ -22,8 +22,11 @@ Raspberry Pi Zero W 2 + Adafruit RGB Matrix Bonnet for Raspberry Pi
 
 ![Metaballs](docs/metaballs.gif)
 
+WebGPU shader example: [`metaballs_shader`](examples/metaballs_shader/readme.md)
+
 ![Cube](docs/3d.gif)
 
+3D Scene example: [`rotating_3d_cube`](examples/rotating_3d_cube/readme.md)
 
 ## To-do
 

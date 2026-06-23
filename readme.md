@@ -1,6 +1,6 @@
 # Render Bevy scenes to an LED matrix display [WIP]
 
-> Disclaimer: The purpose of this library is mainly to teaching myself Rust, Bevy and > WebGPU.
+> Disclaimer: The purpose of this library is mainly to teaching myself Rust, Bevy and WebGPU.
 > Hoping to publish this on crates.io sometime.
 > 
 > Please try it! Would love to know how it works for you.

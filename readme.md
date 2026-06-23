@@ -1,5 +1,10 @@
 # Render Bevy scenes to an LED matrix display [WIP]
 
+> Disclaimer: The purpose of this library is for the purposes of teaching myself Rust, Bevy and > WebGPU. Hoping to publish this on crates.io sometime.
+> 
+> Please try it! Would love to know how it works for you.
+> Setup instructions should be quite generic if you've ever worked with hzeller's library.
+
 Fuses [`rpi-led-matrix`](https://crates.io/crates/rpi-led-matrix) together with the Rust-based [`bevy`](https://github.com/bevyengine/bevy/tree/main) game engine to render real-time graphics on a LED matrix display.
 As some Pi's are unable to build a Bevy game (not enough ram in the case of the Raspberry Pi Zero W 2) the current setup assumes you will compile the Bevy code on your own machine and then transfer it to the Pi.
 
